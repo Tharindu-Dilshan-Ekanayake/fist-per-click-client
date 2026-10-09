@@ -11,9 +11,108 @@ const STEPS = [
   ['02', 'Follow the blue arrows to the Stage 1 gate and smash the walls - break 10 to clear a stage.'],
   ['03', 'Hold E on a Win pad to cash in your Wins. Spend them on bigger gloves, pets and punching bags.'],
   ['04', 'Step onto a punching bag\u2019s pad to train on it: it multiplies your Strength.'],
-  ['05', 'Fight other players in the boxing rings: stand on a pad in front of a ring and press E. The stronger fist wins!'],
-  ['06', 'Reach the level cap and Rebirth for permanent Power. Rebirth 3 opens Space World.'],
+  ['05', 'Reach the level cap and Rebirth for permanent Power. Rebirth 3 opens Space World.'],
 ]
+
+/** The boxing rings, step by step: [icon, title, what happens]. */
+const RING_STEPS = [
+  ['🏟️', 'Find the rings', 'Four rings wait behind the training zone, past the BOXING RINGS arch.'],
+  ['🥊', 'Pick a corner', 'Stand on the RED or BLUE pad in front of a ring and press E to join.'],
+  ['🔔', 'Into the ring', 'When someone joins the other pad, you are both taken in. 3, 2, 1... FIGHT!'],
+  ['👊', 'Punch to win', 'Click fast! The stronger fist hits harder. Knock them out to win Wins.'],
+]
+
+/** The rules worth knowing before stepping in, as chips. */
+const RING_RULES = [
+  ['⏱️', '45s rounds'],
+  ['❤️', 'HP grows with level'],
+  ['💪', 'Strength = damage'],
+  ['🏆', 'Winner takes Wins'],
+]
+
+/**
+ * The boxing rings get a card of their own: they are the one place you fight other
+ * players, and the way in (a pad, E, wait for an opponent) is not obvious.
+ */
+function RingsCard({ touch }) {
+  return (
+    <div
+      className="relative mt-5 overflow-hidden rounded-2xl border-[4px] border-[#191827] shadow-[0_5px_0_rgba(0,0,0,0.35)]"
+      style={{ background: 'linear-gradient(135deg, #2a1240 0%, #1b1d4a 55%, #10284f 100%)' }}
+    >
+      {/* Red corner and blue corner glowing in from either side. */}
+      <div className="pointer-events-none absolute -left-10 top-6 h-32 w-32 rounded-full bg-red-500/35 blur-2xl" />
+      <div className="pointer-events-none absolute -right-10 top-6 h-32 w-32 rounded-full bg-blue-500/35 blur-2xl" />
+
+      <div className="relative px-4 pb-4 pt-3 sm:px-5">
+        <div className="flex justify-center">
+          <span className="rounded-full border-2 border-[#191827] bg-gradient-to-b from-yellow-200 to-amber-500 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest text-[#3a2200]">
+            ★ Special ★
+          </span>
+        </div>
+        <div className={`mt-1 text-center text-white ${touch ? 'text-2xl' : 'text-3xl'}`} style={OUTLINE}>
+          🥊 Boxing Rings 🥊
+        </div>
+        <div className="text-center text-xs font-bold text-pink-200 sm:text-sm">Fight other players live - everyone can watch!</div>
+
+        {/* A little picture of it: the red pad, the ring, the blue pad. */}
+        <div className="mx-auto mt-3 flex max-w-xs items-end justify-center gap-3">
+          <div className="flex flex-col items-center">
+            <div className="h-4 w-12 rounded-full border-2 border-[#191827] bg-gradient-to-b from-red-400 to-red-600 shadow-[0_0_12px_rgba(255,74,74,0.8)]" />
+            <span className="mt-1 text-[10px] font-black text-red-300" style={CHIP}>
+              RED
+            </span>
+          </div>
+          <div className="relative h-16 w-24 rounded-md border-2 border-[#191827] bg-gradient-to-b from-slate-100 to-slate-300">
+            {[18, 34, 50].map((top) => (
+              <div key={top} className="absolute inset-x-1 h-[3px] rounded bg-rose-500/80" style={{ top: `${top}%` }} />
+            ))}
+            <div className="absolute -left-1 -top-1 h-3 w-3 rounded-full border-2 border-[#191827] bg-red-500" />
+            <div className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#191827] bg-blue-500" />
+            <div className="absolute inset-x-0 bottom-1 text-center text-lg leading-none">⚔️</div>
+          </div>
+          <div className="flex flex-col items-center">
+            <div className="h-4 w-12 rounded-full border-2 border-[#191827] bg-gradient-to-b from-sky-400 to-blue-600 shadow-[0_0_12px_rgba(63,140,255,0.8)]" />
+            <span className="mt-1 text-[10px] font-black text-sky-300" style={CHIP}>
+              BLUE
+            </span>
+          </div>
+        </div>
+
+        <div className={`mt-3 grid gap-2 ${touch ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          {RING_STEPS.map(([icon, title, text], i) => (
+            <div key={title} className="flex items-start gap-2 rounded-xl border-2 border-white/15 bg-white/10 p-2">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-[#191827] bg-gradient-to-b from-pink-400 to-fuchsia-600 text-base">
+                {icon}
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm text-white" style={OUTLINE}>
+                  {i + 1}. {title}
+                </div>
+                <div className="text-xs font-semibold leading-snug text-slate-200">{text}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+          {RING_RULES.map(([icon, text]) => (
+            <span
+              key={text}
+              className="rounded-full border-2 border-[#191827] bg-gradient-to-b from-amber-200 to-yellow-400 px-2.5 py-0.5 text-[11px] font-black text-[#3a2200]"
+            >
+              {icon} {text}
+            </span>
+          ))}
+        </div>
+
+        <div className="mt-2 text-center text-[11px] font-bold text-slate-300">
+          Knocked out? You land back in the lobby - train up and try again!
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function Key({ children }) {
   return (
@@ -124,9 +223,7 @@ export function HowToPlay() {
             ))}
           </div>
 
-          <div className="mt-4 rounded-xl border-2 border-sky-300 bg-sky-100 px-3 py-2 text-center text-sm font-extrabold text-sky-900">
-            Tip: knocked out in a ring? You land back in the lobby - train up and try again!
-          </div>
+          <RingsCard touch={touch} />
 
           <button
             type="button"
