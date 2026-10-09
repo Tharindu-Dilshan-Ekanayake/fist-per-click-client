@@ -1,5 +1,5 @@
 import { Environment, Lightformer } from '@react-three/drei'
-import { Canvas, useFrame, useStore } from '@react-three/fiber'
+import { Canvas, useFrame, useStore, useThree } from '@react-three/fiber'
 import { Physics } from '@react-three/rapier'
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
@@ -142,10 +142,14 @@ const START = (() => {
  * for poking at the game from the browser console (and the screenshot scripts).
  */
 function DevHandle({ bodyRef }) {
+  const gl = useThree((s) => s.gl)
+  const scene = useThree((s) => s.scene)
   useEffect(() => {
     if (!import.meta.env.DEV) return undefined
     window.__fpc = {
       useGame,
+      gl,
+      scene,
       teleport: (x, y, z) => {
         bodyRef.current?.setTranslation({ x, y, z }, true)
         bodyRef.current?.setLinvel({ x: 0, y: 0, z: 0 }, true)
@@ -155,7 +159,7 @@ function DevHandle({ bodyRef }) {
     return () => {
       delete window.__fpc
     }
-  }, [bodyRef])
+  }, [bodyRef, gl, scene])
   return null
 }
 

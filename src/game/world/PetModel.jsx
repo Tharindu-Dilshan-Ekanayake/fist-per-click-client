@@ -1,7 +1,8 @@
 import { useFrame } from '@react-three/fiber'
-import { useMemo, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import { AdditiveBlending, CapsuleGeometry, ConeGeometry, SphereGeometry, TorusGeometry } from 'three'
 
+import { bakePet } from './bakePet'
 import { Sparkle } from './Effects'
 import { geometry } from './geometry'
 import { radialGlowTexture, shade } from './textures'
@@ -205,6 +206,15 @@ export function PetModel({ pet, walkRef }) {
   const earRefs = useRef([])
   const wingRefs = useRef([])
   const phase = useRef(0)
+  // Everything that moves together drawn as one mesh (see bakePet). Again whenever
+  // the pet changes: a remote player's pet can be swapped under the same component.
+  useLayoutEffect(() => {
+    const animated = new Set(
+      [bounceRef.current, headRef.current, tailRef.current, ...legRefs.current, ...earRefs.current, ...eyeRefs.current, ...wingRefs.current].filter(Boolean),
+    )
+    return bakePet(bounceRef.current, animated, glow * 0.45)
+  }, [pet, glow])
+
   // Each pet blinks on its own clock, from its id.
   const offset = useMemo(() => [...pet.id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 7, [pet.id])
 
@@ -263,7 +273,7 @@ export function PetModel({ pet, walkRef }) {
   const snout = s.snout
 
   return (
-    <group scale={s.size}>
+    <group scale={s.size} name="pet">
       {/* The soft shadow-glow of the rarer pets, and their sparkle. */}
       {glow >= 0.3 && (
         <sprite position={[0, 0.55, 0]} scale={1.6}>

@@ -4,7 +4,7 @@ import { useTouchDevice } from '../game/device'
 import { useGame } from '../game/gameStore'
 import { CHIP, OUTLINE } from './textStyle'
 
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyE', 'KeyP', 'KeyR', 'KeyB', 'KeyC', 'KeyG', 'KeyM'])
+const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyE', 'KeyP', 'KeyR', 'KeyB', 'KeyC', 'KeyG', 'KeyM', 'KeyN'])
 
 const STEPS = [
   ['01', 'Click to punch! Every punch gives you Strength.'],

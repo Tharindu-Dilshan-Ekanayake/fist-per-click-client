@@ -5,6 +5,7 @@ import { Object3D, Vector3 } from 'three'
 import { useGame } from '../gameStore'
 import { playerPosition } from '../playerAnchor'
 import { qualityOf, useSettings } from '../settings'
+import Frozen from './Frozen'
 import Leaderboards from './Leaderboards'
 import { Backdrop, Clouds, Crown, Crystal, GlowPad, Label, Sky } from './Effects'
 import EggStand from './EggStand'
@@ -98,11 +99,27 @@ const GlowPads = memo(function GlowPads({ items }) {
 const Crowns = memo(function Crowns({ items }) {
   return items.map((crown) => <Gold key={`${crown.position}`} {...crown} />)
 })
-const Crystals = memo(function Crystals({ items }) {
-  return items.map((crystal) => <Shard key={`${crystal.position}`} {...crystal} />)
-})
+/**
+ * The map's signs never move, so their matrices are worked out once - each time the
+ * set changes - rather than every frame (see the note on Frozen).
+ */
 const Labels = memo(function Labels({ items }) {
-  return items.map((label) => <Sign key={`${label.position}`} {...label} />)
+  return (
+    <Frozen deps={items}>
+      {items.map((label) => (
+        <Sign key={`${label.position}`} {...label} />
+      ))}
+    </Frozen>
+  )
+})
+const Crystals = memo(function Crystals({ items }) {
+  return (
+    <Frozen deps={items}>
+      {items.map((crystal) => (
+        <Shard key={`${crystal.position}`} {...crystal} />
+      ))}
+    </Frozen>
+  )
 })
 const GlovePads = memo(function GlovePads({ items }) {
   return items.map((pad) => <Glove key={pad.glove.id} {...pad} />)

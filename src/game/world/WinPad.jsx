@@ -94,7 +94,7 @@ export function WinPad({ number, pad, position, home = SPAWN }) {
   const map = studTexture([pad.color], { cells: 1, studsPerCell: 6 })
 
   return (
-    <group position={position}>
+    <group position={position} name="winpad">
       {/* Dark trim, then the bright studded tile. */}
       <mesh position={[0, 0.07, 0]} receiveShadow>
         <boxGeometry args={[SIZE + 0.4, 0.14, SIZE + 0.4]} />

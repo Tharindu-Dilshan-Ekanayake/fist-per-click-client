@@ -4,6 +4,7 @@ import { AdditiveBlending, DoubleSide, PlaneGeometry } from 'three'
 
 import { qualityOf, useSettings } from '../settings'
 import { Sparkle } from './Effects'
+import Lod from './Lod'
 import { geometry } from './geometry'
 import { NEON_INSET, neonOutlineTexture, radialGlowTexture } from './textures'
 
@@ -38,7 +39,8 @@ const flatPlane = () =>
  *   `size`: the outline's width (a square's side, or a hex's corner-to-corner).
  *   `y`: height of the outline, just above the pad's top. `rise`: how high the rings
  *   climb. `level`: brightness, about 0.4 (locked) to 1.2 (in use). `phase` offsets
- *   the pulse and rings so neighbouring pads don't move in step.
+ *   the pulse and rings so neighbouring pads don't move in step. `lod`: beyond this
+ *   far from the camera none of it is drawn (see Lod).
  */
 export function PadGlow({
   color,
@@ -49,6 +51,7 @@ export function PadGlow({
   level = 1,
   sparkles = 6,
   phase = 0,
+  lod = 30,
 }) {
   const outline = useRef(null)
   const halo = useRef(null)
@@ -82,7 +85,7 @@ export function PadGlow({
   const glow = { transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false }
 
   return (
-    <group>
+    <Lod distance={lod}>
       <mesh position={[0, 0.03, 0]} geometry={geom} scale={size * 2.1}>
         <meshBasicMaterial ref={halo} map={radialGlowTexture()} color={color} opacity={0.32} {...glow} />
       </mesh>
@@ -119,7 +122,7 @@ export function PadGlow({
           color={color}
         />
       )}
-    </group>
+    </Lod>
   )
 }
 

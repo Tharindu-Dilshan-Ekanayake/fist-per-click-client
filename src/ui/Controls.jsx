@@ -16,6 +16,7 @@ const ROWS = [
   ['Right-drag', 'turn the camera'],
   ['Scroll', 'zoom'],
   ['M', 'sound on / off'],
+  ['N', 'music on / off'],
   ['P', 'open / close Pets'],
   ['R', 'open / close Rebirth'],
   ['B', 'open / close Shop'],

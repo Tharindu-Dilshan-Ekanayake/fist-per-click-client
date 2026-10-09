@@ -12,6 +12,7 @@ import { remoteStates, useLobby } from '../../net/lobbyClient'
 import { Label, Sparkle } from './Effects'
 import { geometry, merge } from './geometry'
 import InteractPrompt from './InteractPrompt'
+import Lod from './Lod'
 import PadGlow from './PadGlow'
 import { labelTexture, radialGlowTexture, shade, studTexture } from './textures'
 
@@ -230,7 +231,12 @@ export function PunchingBag({ trainer, position, rotationY = 0, labelY = 5.4 }) 
       const k = t >= 0 && t < 0.35 ? Math.exp(-t * 14) * Math.cos(t * 40) : 0
       bag.current.scale.set(1 + 0.08 * k, 1 - 0.05 * k, 1 - 0.12 * k)
     }
-    if (flash.current) flash.current.opacity = t >= 0 && t < FLASH_S ? 0.9 * (1 - t / FLASH_S) : 0
+    if (flash.current) {
+      // Not drawn at all between punches: a quad at zero opacity is still a draw.
+      const o = t >= 0 && t < FLASH_S ? 0.9 * (1 - t / FLASH_S) : 0
+      flash.current.opacity = o
+      flash.current.visible = o > 0
+    }
     if (padMaterial.current) {
       padMaterial.current.emissiveIntensity = active
         ? 0.6 + 0.25 * Math.sin(clock.elapsedTime * 5)
@@ -282,7 +288,7 @@ export function PunchingBag({ trainer, position, rotationY = 0, labelY = 5.4 }) 
 
   const band = trainer.band ?? '#ffffff'
   return (
-    <group position={position} rotation={[0, rotationY, 0]}>
+    <group position={position} rotation={[0, rotationY, 0]} name="bag">
       {/* Studded square tile on a darker trim. */}
       <mesh position={[0, 0.08, 0]} receiveShadow>
         <boxGeometry args={[PAD + 0.5, 0.16, PAD + 0.5]} />
@@ -335,13 +341,15 @@ export function PunchingBag({ trainer, position, rotationY = 0, labelY = 5.4 }) 
             <mesh geometry={bandGeometry()}>
               <meshStandardMaterial color={band} roughness={0.5} emissive={band} emissiveIntensity={trainer.vip ? 0.35 : 0.08} />
             </mesh>
-            {/* Its logo, front and back. */}
-            {[1, -1].map((face) => (
-              <mesh key={face} position={[0, 0.05, face * (BAG_R + 0.02)]} rotation={[0, face > 0 ? 0 : Math.PI, 0]}>
-                <planeGeometry args={[0.78, 0.52]} />
-                <meshBasicMaterial map={logo} transparent depthWrite={false} toneMapped={false} />
-              </mesh>
-            ))}
+            {/* Its logo, front and back - close up only. */}
+            <Lod distance={24}>
+              {[1, -1].map((face) => (
+                <mesh key={face} position={[0, 0.05, face * (BAG_R + 0.02)]} rotation={[0, face > 0 ? 0 : Math.PI, 0]}>
+                  <planeGeometry args={[0.78, 0.52]} />
+                  <meshBasicMaterial map={logo} transparent depthWrite={false} toneMapped={false} />
+                </mesh>
+              ))}
+            </Lod>
             <mesh position={[0, 0.05, BAG_R + 0.1]}>
               <planeGeometry args={[1.8, 1.8]} />
               <meshBasicMaterial

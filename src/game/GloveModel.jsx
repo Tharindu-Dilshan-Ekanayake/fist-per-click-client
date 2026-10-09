@@ -314,6 +314,23 @@ function wingsGeometry() {
   })
 }
 
+/** Parts that share a material, merged into one geometry: one draw instead of several. */
+const mergedOf = (key, parts) =>
+  geometry(key, () =>
+    merge(
+      parts.map((g) => {
+        const flat = g.index ? g.toNonIndexed() : g.clone()
+        flat.clearGroups()
+        return flat
+      }),
+    ),
+  )
+/** The fist and the thumb: the leather. */
+const leatherGeometry = () => mergedOf('glove3-leather', [fistGeometry(), thumbGeometry()])
+/** The cuff's band, and the star on the back of the hand where the design has one. */
+const trimGeometry = (emblem) =>
+  emblem ? mergedOf('glove3-trim-emblem', [bandGeometry(), emblemGeometry()]) : bandGeometry()
+
 /**
  * The extras a pair earns as it climbs the ladder (see gloveTier). The rookies are
  * plain; the best pairs glow, orbit and sparkle.
@@ -331,9 +348,10 @@ const gloveExtras = (tier) => ({
  *   plain pair's trim a little (the shop display uses it). `flashRef`, when given,
  *   is read every frame (not passed as a prop, so a punch doesn't re-render the
  *   glove 60 times a second): its `.current` (0-1) flares the trim, fading back as
- *   the punch lands.
+ *   the punch lands. `shadows` false keeps it out of the shadow pass (the shop's
+ *   rows of floating gloves, where nobody can see the shadow anyway).
  */
-export function GloveModel({ glove, side = 1, minGlow = 0, flashRef, sparkles = true }) {
+export function GloveModel({ glove, side = 1, minGlow = 0, flashRef, sparkles = true, shadows = true }) {
   const baseGlow = Math.max(glove.glow ?? 0, minGlow)
   const design = glove.design
   const extras = gloveExtras(gloveTier(glove))
@@ -349,7 +367,7 @@ export function GloveModel({ glove, side = 1, minGlow = 0, flashRef, sparkles = 
   useFrame(({ clock }, delta) => {
     const t = clock.elapsedTime + phase
     const boost = flashRef?.current || 0
-    if (trimMat.current) trimMat.current.emissiveIntensity = baseGlow * 0.6 + boost * FLASH_BOOST
+    if (trimMat.current) trimMat.current.emissiveIntensity = 0.15 + baseGlow * 0.6 + boost * FLASH_BOOST
     if (fxMat.current) fxMat.current.emissiveIntensity = 0.8 + baseGlow + 0.35 * Math.sin(t * 4) + boost * FLASH_BOOST
     if (flames.current) {
       const f = 1 + 0.18 * Math.sin(t * 17) + 0.1 * Math.sin(t * 29) + boost * 0.4
@@ -365,25 +383,17 @@ export function GloveModel({ glove, side = 1, minGlow = 0, flashRef, sparkles = 
 
   const trim = glove.trim
   return (
-    <group scale={[glove.size * side, glove.size, glove.size]}>
+    <group scale={[glove.size * side, glove.size, glove.size]} name="glove">
       {/* Glossy leather, the way a new glove shines. */}
-      <mesh geometry={fistGeometry()} castShadow>
-        <meshPhysicalMaterial color={glove.main} roughness={0.42} clearcoat={0.7} clearcoatRoughness={0.25} />
+      <mesh geometry={leatherGeometry()} castShadow={shadows}>
+        <meshStandardMaterial color={glove.main} roughness={0.32} metalness={0.05} />
       </mesh>
-      <mesh geometry={thumbGeometry()} castShadow>
-        <meshPhysicalMaterial color={glove.main} roughness={0.42} clearcoat={0.7} clearcoatRoughness={0.25} />
-      </mesh>
-      <mesh geometry={cuffGeometry()} castShadow>
+      <mesh geometry={cuffGeometry()} castShadow={shadows}>
         <meshStandardMaterial color={glove.cuff} roughness={0.55} />
       </mesh>
-      <mesh geometry={bandGeometry()}>
-        <meshStandardMaterial ref={trimMat} color={trim} emissive={trim} emissiveIntensity={baseGlow * 0.6} roughness={0.35} metalness={0.2} />
+      <mesh geometry={trimGeometry(design !== 'spiked' && design !== 'crystal' && design !== 'thunder')}>
+        <meshStandardMaterial ref={trimMat} color={trim} emissive={trim} emissiveIntensity={0.15 + baseGlow * 0.6} roughness={0.35} metalness={0.3} />
       </mesh>
-      {design !== 'spiked' && design !== 'crystal' && design !== 'thunder' && (
-        <mesh geometry={emblemGeometry()}>
-          <meshStandardMaterial color={trim} emissive={trim} emissiveIntensity={0.25 + baseGlow * 0.6} metalness={0.4} roughness={0.3} />
-        </mesh>
-      )}
 
       {design === 'pro' && (
         <mesh geometry={lacesGeometry()}>
@@ -391,7 +401,7 @@ export function GloveModel({ glove, side = 1, minGlow = 0, flashRef, sparkles = 
         </mesh>
       )}
       {design === 'spiked' && (
-        <mesh geometry={spikesGeometry()} castShadow>
+        <mesh geometry={spikesGeometry()} castShadow={shadows}>
           <meshStandardMaterial color="#d9dde6" metalness={0.85} roughness={0.25} emissive={trim} emissiveIntensity={baseGlow * 0.25} />
         </mesh>
       )}
@@ -403,7 +413,7 @@ export function GloveModel({ glove, side = 1, minGlow = 0, flashRef, sparkles = 
         </group>
       )}
       {design === 'crystal' && (
-        <mesh geometry={shardsGeometry()} castShadow>
+        <mesh geometry={shardsGeometry()} castShadow={shadows}>
           <meshStandardMaterial ref={fxMat} color={trim} emissive={trim} emissiveIntensity={1} roughness={0.1} flatShading />
         </mesh>
       )}
@@ -425,7 +435,7 @@ export function GloveModel({ glove, side = 1, minGlow = 0, flashRef, sparkles = 
       )}
       {design === 'royal' && (
         <>
-          <mesh geometry={crownGeometry()} castShadow>
+          <mesh geometry={crownGeometry()} castShadow={shadows}>
             <meshStandardMaterial color="#ffd23f" metalness={0.9} roughness={0.2} emissive="#ffb000" emissiveIntensity={0.25} />
           </mesh>
           <mesh geometry={gemGeometry()}>
@@ -434,7 +444,7 @@ export function GloveModel({ glove, side = 1, minGlow = 0, flashRef, sparkles = 
         </>
       )}
       {design === 'dragon' && (
-        <mesh geometry={hornsGeometry()} castShadow>
+        <mesh geometry={hornsGeometry()} castShadow={shadows}>
           <meshStandardMaterial color={glove.cuff} roughness={0.35} metalness={0.3} emissive={trim} emissiveIntensity={baseGlow * 0.3} />
         </mesh>
       )}

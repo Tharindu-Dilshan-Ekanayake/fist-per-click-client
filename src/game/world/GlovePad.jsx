@@ -10,6 +10,7 @@ import { glowColor } from '../gloves'
 import GloveModel from '../GloveModel'
 import { Label } from './Effects'
 import InteractPrompt from './InteractPrompt'
+import Lod from './Lod'
 import PadGlow from './PadGlow'
 import { radialGlowTexture, shade } from './textures'
 
@@ -106,7 +107,7 @@ export function GlovePad({ glove, position }) {
           : { text: `${formatNumber(glove.cost)} Wins`, icon: 'trophy', fill: GOLD }
 
   return (
-    <group position={position}>
+    <group position={position} name="glovepad">
       {/* Hexagon pad: dark rim with a glowing top. */}
       <mesh position={[0, 0.09, 0]} rotation={[0, Math.PI / 6, 0]} receiveShadow>
         <cylinderGeometry args={[1.6, 1.7, 0.18, 6]} />
@@ -125,12 +126,13 @@ export function GlovePad({ glove, position }) {
 
       {/* The pair, knuckles up, side by side, turning together. Flipped so the
           knuckles point at the sky (the model's fist points down -Y). */}
+      <Lod distance={34}>
       <group ref={pairRef} position={[0, DISPLAY_Y, 0]} scale={DISPLAY_SCALE}>
         <group position={[-PAIR_GAP * glove.size, 0.2 * glove.size, 0]} rotation={[0, 0, Math.PI]}>
-          <GloveModel glove={glove} side={1} minGlow={0.3} />
+          <GloveModel glove={glove} side={1} minGlow={0.3} shadows={false} />
         </group>
         <group position={[PAIR_GAP * glove.size, 0.2 * glove.size, 0]} rotation={[0, 0, Math.PI]}>
-          <GloveModel glove={glove} side={-1} minGlow={0.3} sparkles={false} />
+          <GloveModel glove={glove} side={-1} minGlow={0.3} sparkles={false} shadows={false} />
         </group>
       </group>
 
@@ -161,6 +163,7 @@ export function GlovePad({ glove, position }) {
           />
         </mesh>
       </Billboard>
+      </Lod>
 
       <Billboard position={[0, height + 1.4, 0]}>
         <Label
