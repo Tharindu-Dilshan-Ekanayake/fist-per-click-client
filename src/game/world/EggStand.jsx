@@ -11,7 +11,6 @@ import { Label, Sparkle } from './Effects'
 import { geometry, merge } from './geometry'
 import InteractPrompt from './InteractPrompt'
 import { radialGlowTexture, shade } from './textures'
-import Lod from './Lod'
 import { PetModel } from './PetModel'
 
 /** The egg's height, and its half-width at the widest. */
@@ -139,7 +138,7 @@ export function EggStand({ egg, position }) {
         <meshStandardMaterial color={egg.colors[0]} emissive={egg.colors[0]} emissiveIntensity={0.4} />
       </mesh>
 
-      <Lod distance={34}>
+      <>
       {owned ? (
         <group ref={petRef} position={[0, STAND_TOP, 0]}>
           <PetModel pet={pet} />
@@ -177,7 +176,7 @@ export function EggStand({ egg, position }) {
           />
         </>
       )}
-      </Lod>
+      </>
 
       <Billboard position={[0, STAND_TOP + EGG_HEIGHT + 1.3, 0]}>
         <Label

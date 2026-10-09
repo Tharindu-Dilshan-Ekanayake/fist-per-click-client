@@ -12,7 +12,6 @@ import { remoteStates, useLobby } from '../../net/lobbyClient'
 import { Label, Sparkle } from './Effects'
 import { geometry, merge } from './geometry'
 import InteractPrompt from './InteractPrompt'
-import Lod from './Lod'
 import PadGlow from './PadGlow'
 import { labelTexture, radialGlowTexture, shade, studTexture } from './textures'
 
@@ -341,15 +340,15 @@ export function PunchingBag({ trainer, position, rotationY = 0, labelY = 5.4 }) 
             <mesh geometry={bandGeometry()}>
               <meshStandardMaterial color={band} roughness={0.5} emissive={band} emissiveIntensity={trainer.vip ? 0.35 : 0.08} />
             </mesh>
-            {/* Its logo, front and back - close up only. */}
-            <Lod distance={24}>
+            {/* Its logo, front and back. */}
+            <>
               {[1, -1].map((face) => (
                 <mesh key={face} position={[0, 0.05, face * (BAG_R + 0.02)]} rotation={[0, face > 0 ? 0 : Math.PI, 0]}>
                   <planeGeometry args={[0.78, 0.52]} />
                   <meshBasicMaterial map={logo} transparent depthWrite={false} toneMapped={false} />
                 </mesh>
               ))}
-            </Lod>
+            </>
             <mesh position={[0, 0.05, BAG_R + 0.1]}>
               <planeGeometry args={[1.8, 1.8]} />
               <meshBasicMaterial

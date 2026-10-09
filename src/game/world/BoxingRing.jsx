@@ -22,7 +22,6 @@ import {
 } from '../rings'
 import { useGame } from '../gameStore'
 import { Label } from './Effects'
-import Lod from './Lod'
 import InteractPrompt from './InteractPrompt'
 import { geometry, merge } from './geometry'
 import PadGlow from './PadGlow'
@@ -361,8 +360,7 @@ export function BoxingRing({ ring }) {
         <boxGeometry args={[RING_PLATFORM_HALF * 2 + 0.08, 0.08, RING_PLATFORM_HALF * 2 + 0.08]} />
         <meshBasicMaterial color={ring.accent} toneMapped={false} />
       </mesh>
-      {/* Close-up detail: the skirt's lettering, and the light rig. */}
-      <Lod distance={45}>
+            <>
       {/* The ring's name on all four sides of the skirt. */}
       {[0, 1, 2, 3].map((i) => {
         const a = (i * Math.PI) / 2
@@ -375,7 +373,7 @@ export function BoxingRing({ ring }) {
         )
       })}
 
-      </Lod>
+      </>
 
       {/* Corner posts and their pads. */}
       {CORNERS.map((c, i) => (
@@ -401,7 +399,7 @@ export function BoxingRing({ ring }) {
         </mesh>
       ))}
 
-      <Lod distance={45}>
+      <>
       {/* The light rig, its lamps, and a pool of light on the canvas. */}
       <mesh geometry={rigGeometry()}>
         <meshStandardMaterial color="#20222e" metalness={0.6} roughness={0.4} />
@@ -426,7 +424,7 @@ export function BoxingRing({ ring }) {
         />
       </mesh>
 
-      </Lod>
+      </>
 
       {/* The scoreboard, turning to whoever is looking. */}
       <Billboard position={[0, BOARD_Y, 0]}>
