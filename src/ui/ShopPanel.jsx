@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { AURA_RARITY, AURAS } from '../game/auras'
 import { useTouchDevice } from '../game/device'
 import { footprintCanvas, footprintCost, FOOTPRINT_SETS, footprintRarity, footprintStyle } from '../game/footprintSets'
 import { formatNumber } from '../game/format'
@@ -8,7 +9,7 @@ import { getPass, PASSES } from '../game/passes'
 import { CHIP, OUTLINE } from './textStyle'
 
 /**
- * The shop: the passes and every pair of gloves' footprints, all bought with Wins.
+ * The shop: the passes, the auras and every pair of gloves' footprints, bought with Wins.
  * Gloves, bags and the Exclusive egg are sold where they stand, on their VIP platforms;
  * the shop says so at the bottom rather than duplicating them.
  */
@@ -174,8 +175,75 @@ function FootprintTile({ glove, touch }) {
   )
 }
 
+/** What each aura style looks like in its tile: an emoji over a glow in its colours. */
+const AURA_EMOJI = { spark: '✨', flame: '🔥', swirl: '🌀', bubbles: '🫧', lightning: '⚡', galaxy: '🌌', rainbow: '🌈', crown: '👑' }
+
+/**
+ * One aura: a glowing preview in its colours, its name and where it comes from, and
+ * Buy (Wins) - or, for a level aura, the level it needs - then Wear / On once owned.
+ */
+function AuraTile({ aura, touch }) {
+  const owned = useGame((s) => s.ownedAuras.includes(aura.id))
+  const wearing = useGame((s) => s.aura === aura.id)
+  const canAfford = useGame((s) => s.wins >= (aura.cost ?? Infinity))
+  const bestLevel = useGame((s) => s.bestLevel)
+  const rarity = AURA_RARITY[aura.rarity]
+  const locked = !owned && aura.level
+  const pick = () => useGame.getState().pickAura(aura.id)
+
+  let label
+  let colors
+  if (wearing) [label, colors] = ['✔ ON', ['#7ce86a', '#2f9e44']]
+  else if (owned) [label, colors] = ['WEAR', ['#3fb6ff', '#0f6fd8']]
+  else if (locked) [label, colors] = [`LEVEL ${aura.level}`, ['#6a6a7a', '#44444f']]
+  else [label, colors] = [`🏆 ${formatNumber(aura.cost)}`, canAfford ? ['#fff27a', '#f0a000'] : ['#ff8a6a', '#c0392b']]
+
+  return (
+    <div
+      className={`relative flex flex-col overflow-hidden rounded-xl border-4 ${touch ? 'p-1' : 'p-1.5'}`}
+      style={{
+        borderColor: wearing ? '#7ce86a' : INK,
+        background: `linear-gradient(to bottom, ${rarity[1]}, #221a40 70%)`,
+        boxShadow: wearing ? '0 0 14px rgba(124,232,106,0.7)' : 'inset 0 -4px 0 rgba(0,0,0,0.25)',
+      }}
+    >
+      <div
+        className={`aura-preview relative flex items-center justify-center rounded-lg ${touch ? 'h-14' : 'h-20'}`}
+        style={{
+          background: `radial-gradient(circle, ${aura.colors[0]}cc 0%, ${aura.colors[1]}88 35%, transparent 70%)`,
+          opacity: locked ? 0.45 : 1,
+        }}
+      >
+        <span className={touch ? 'text-2xl' : 'text-4xl'} style={EMOJI} aria-hidden>
+          {locked ? '🔒' : AURA_EMOJI[aura.style]}
+        </span>
+        <span
+          className={`absolute left-0 top-0 rounded-md px-1 text-white ${touch ? 'text-[8px]' : 'text-[10px]'}`}
+          style={{ ...CHIP, background: `linear-gradient(to bottom, ${rarity[0]}, ${rarity[1]})` }}
+        >
+          {aura.rarity.toUpperCase()}
+        </span>
+      </div>
+      <div className={`truncate text-center text-white ${touch ? 'text-[10px]' : 'text-sm'}`} style={CHIP} title={aura.name}>
+        {aura.name}
+      </div>
+      <div className={`mb-1 truncate text-center text-white/60 ${touch ? 'text-[8px]' : 'text-[10px]'}`} style={CHIP}>
+        {aura.level ? (owned ? `Earned at Level ${aura.level}` : `Free at Level ${aura.level} (best ${bestLevel})`) : 'Shop exclusive'}
+      </div>
+      <ShopButtonFace
+        colors={colors}
+        onClick={pick}
+        className={`mt-auto w-full ${touch ? 'px-1 py-0.5 text-[10px]' : 'px-1 py-1 text-sm'}`}
+      >
+        {label}
+      </ShopButtonFace>
+    </div>
+  )
+}
+
 const TABS = [
   { id: 'passes', label: 'Passes', emoji: '⭐', colors: ['#ffd84a', '#f08c00'] },
+  { id: 'auras', label: 'Auras', emoji: '✨', colors: ['#d07bff', '#7a2fe4'] },
   { id: 'footprints', label: 'Footprints', emoji: '👣', colors: ['#7ce86a', '#2f9e44'] },
 ]
 
@@ -261,6 +329,20 @@ function ShopDialog() {
                 <PassRow key={pass.id} pass={pass} touch={touch} />
               ))}
             </div>
+          )}
+
+          {tab === 'auras' && (
+            <>
+              <div className={`text-center text-white/80 ${touch ? 'mb-2 text-[10px]' : 'mb-3 text-sm'}`} style={CHIP}>
+                A glow round you that everyone in the lobby sees - brighter on every punch. Level up to earn some for free, or
+                buy the rarest with Wins.
+              </div>
+              <div className={`grid ${touch ? 'grid-cols-3 gap-1.5' : 'grid-cols-5 gap-2.5'}`}>
+                {AURAS.map((aura) => (
+                  <AuraTile key={aura.id} aura={aura} touch={touch} />
+                ))}
+              </div>
+            </>
           )}
 
           {tab === 'footprints' && (

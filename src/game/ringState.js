@@ -6,13 +6,14 @@ import { RING_MAX_HP, RINGS } from './rings'
  * What this client knows about the boxing rings, as the server last told it (see
  * net/lobbyClient.js and the server's rings.js).
  *
- * `rings[i]` is `{ f: [id | null, id | null], hp: [a, b], s: state, t: ms left, at, since }`:
- * the two fighters (red corner, blue corner), their health, the ring's state -
+ * `rings[i]` is `{ f: [id | null, id | null], p: [id | null, id | null], hp: [a, b], s: state,
+ * t: ms left, at, since }`: the two fighters (red corner, blue corner), who is waiting
+ * on its two pads, the fighters' health, the ring's state -
  * 'open' | 'countdown' | 'fight' | 'ko' - how long its clock had left at `at`
  * (`performance.now()` when the snapshot arrived), and since when it has been in
  * that state, as far as this client has seen.
  */
-const empty = () => RINGS.map(() => ({ f: [null, null], hp: [RING_MAX_HP, RING_MAX_HP], s: 'open', t: 0, at: 0, since: 0 }))
+const empty = () => RINGS.map(() => ({ f: [null, null], p: [null, null], hp: [RING_MAX_HP, RING_MAX_HP], s: 'open', t: 0, at: 0, since: 0 }))
 
 export const useRings = create(() => ({ rings: empty() }))
 
@@ -25,7 +26,7 @@ export function setRings(snapshot) {
     rings: RINGS.map((_, i) => {
       const r = snapshot[i] ?? empty()[i]
       const since = before[i]?.s === r.s ? before[i].since : at
-      return { f: r.f, hp: r.hp, s: r.s, t: r.t, at, since }
+      return { f: r.f, p: r.p ?? [null, null], hp: r.hp, s: r.s, t: r.t, at, since }
     }),
   })
 }
@@ -36,6 +37,16 @@ export function setRingHp(index, hp) {
   if (!rings[index] || !Array.isArray(hp)) return
   const next = [...rings]
   next[index] = { ...next[index], hp }
+  useRings.setState({ rings: next })
+}
+
+/** A fight is starting: these two are in the ring, off the pads, counting down. */
+export function markRingStart(index, fighters) {
+  const { rings } = useRings.getState()
+  if (!rings[index] || !Array.isArray(fighters)) return
+  const next = [...rings]
+  const at = performance.now()
+  next[index] = { ...next[index], f: fighters, p: [null, null], hp: [RING_MAX_HP, RING_MAX_HP], s: 'countdown', t: 3000, at, since: at }
   useRings.setState({ rings: next })
 }
 
@@ -58,12 +69,25 @@ export function ringOfPlayer(rings, id) {
   return null
 }
 
+/** Which pad `id` is waiting on: `{ index, slot }`, or null. */
+export function padOfPlayer(rings, id) {
+  if (!id) return null
+  for (let i = 0; i < rings.length; i++) {
+    const slot = rings[i].p.indexOf(id)
+    if (slot >= 0) return { index: i, slot }
+  }
+  return null
+}
+
 /**
- * What happens when the server reports a hit, a knockout or a refusal. Filled in by
+ * What happens when the server reports a fight starting or cancelled, a hit, a
+ * knockout or a refusal. Filled in by
  * RingDirector, which has the player's body and the effects to hand; lobbyClient
  * just calls them. No-ops until then.
  */
 export const ringEvents = {
+  start: () => {},
+  cancel: () => {},
   hit: () => {},
   ko: () => {},
   deny: () => {},

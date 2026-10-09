@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useBloxity } from '../bloxity/BloxityContext'
 import { connectLobby, disconnectLobby, sendState, updateProfile } from '../net/lobbyClient'
 import { useGame } from './gameStore'
+import { levelFor } from './progression'
 
 /** One physics step, in ms (the default timeStep of <Physics>, 1/60 s). */
 const STEP_MS = 1000 / 60
@@ -37,11 +38,13 @@ export function NetSync({ bodyRef }) {
   // The footprints we leave, so everyone else sees them too (only a set we own).
   const footprints = useGame((s) => (s.footprints && s.ownedFootprints.includes(s.footprints) ? s.footprints : null))
   const trainer = useGame((s) => s.activeTrainer)
+  const aura = useGame((s) => (s.aura && s.ownedAuras.includes(s.aura) ? s.aura : null))
+  const level = useGame((s) => levelFor(s.strength))
   const name = identity?.displayName || identity?.username || 'Player'
 
   const profile = useMemo(
-    () => ({ name, avatar: avatar ? { equipped: avatar, proportions } : null, glove, pet, trainer, footprints }),
-    [name, avatar, proportions, glove, pet, trainer, footprints],
+    () => ({ name, avatar: avatar ? { equipped: avatar, proportions } : null, glove, pet, trainer, footprints, aura, level }),
+    [name, avatar, proportions, glove, pet, trainer, footprints, aura, level],
   )
 
   // Declared before the connect effect, so the first hello already carries it.

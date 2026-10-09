@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react'
 import { useBloxity } from '../bloxity/BloxityContext'
 import { useTouchDevice } from '../game/device'
 import { fightFx, HURT_S } from '../game/fightFx'
-import { ringOfPlayer, ringSecondsLeft, useRings } from '../game/ringState'
-import { RING_MAX_HP, RINGS } from '../game/rings'
+import { padOfPlayer, ringOfPlayer, ringSecondsLeft, useRings } from '../game/ringState'
+import { CORNER_NAMES, RING_MAX_HP, RINGS } from '../game/rings'
 import { useLobby } from '../net/lobbyClient'
 import { OUTLINE } from './textStyle'
 
@@ -68,8 +68,24 @@ export function RingHUD() {
   const myName = identity?.displayName || identity?.username || 'You'
   const mine = ringOfPlayer(rings, selfId)
   const ring = mine ? rings[mine.index] : null
+  const pad = mine ? null : padOfPlayer(rings, selfId)
   const now = useTicker(Boolean(mine))
 
+  // On a pad, waiting: say so, and what happens next.
+  if (pad) {
+    const busy = rings[pad.index].s !== 'open'
+    return (
+      <div
+        className={`pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 rounded-2xl border-4 px-4 py-2 text-center text-white ${touch ? 'top-12 text-xs' : 'top-16 text-xl'}`}
+        style={{ ...OUTLINE, borderColor: INK, background: 'linear-gradient(to bottom, rgba(42,45,88,0.92), rgba(22,24,47,0.92))' }}
+      >
+        🥊 {RINGS[pad.index].name} · {CORNER_NAMES[pad.slot]}
+        <div className={touch ? 'text-[10px] text-sky-200' : 'text-base text-sky-200'}>
+          {busy ? 'You are next - wait for this fight to finish' : 'Ready! Waiting for someone on the other pad...'}
+        </div>
+      </div>
+    )
+  }
   if (!mine || !ring) return null
   // How long the ring has been in its current state: "FIGHT!" stays up a moment.
   const since = now - ring.since
@@ -91,12 +107,10 @@ export function RingHUD() {
   }
 
   const hint =
-    ring.s === 'open'
-      ? opponent
-        ? ''
-        : 'Waiting for a challenger... step out of the ring to leave'
-      : ring.s === 'fight'
-        ? 'Click fast to punch! The stronger fist wins'
+    ring.s === 'fight'
+      ? `Click fast to punch ${opponent ? nameOf(opponent) : ''}! The stronger fist wins · ⏱ ${Math.ceil(ringSecondsLeft(ring, now))}s`
+      : ring.s === 'countdown'
+        ? 'Get ready - the ropes are closed, there is no way out but a win!'
         : ''
 
   return (

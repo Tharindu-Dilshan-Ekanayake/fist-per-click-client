@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+import { aurasForLevel, getAura } from './auras'
 import { getEgg } from './eggs'
 import { formatBonus, formatNumber } from './format'
 import { footprintCost } from './footprintSets'
@@ -101,6 +102,12 @@ export const DEFAULT_PROGRESS = Object.freeze({
   ownedFootprints: [],
   /** The footprints being left, by glove id, or null for none. */
   footprints: null,
+  /** Ids of the auras earned (by level) or bought (in the shop); see auras.js. */
+  ownedAuras: [],
+  /** The aura being worn, or null for none. */
+  aura: null,
+  /** The highest level ever reached, on any run: the level auras go by this. */
+  bestLevel: 1,
   /** Fights won in the boxing rings (see world/BoxingRing.jsx). */
   ringWins: 0,
   /** Most fights won in a row without leaving the ring. */
@@ -176,6 +183,8 @@ export const useGame = create(
       punchPos: null,
       /** "+N Strength" popups flying to the Strength counter: `{ id, gain, x, y, dx, dy }`. */
       popups: [],
+      /** `performance.now()` seconds of the last level-up, for the burst (see PlayerFx). */
+      levelUpAt: -Infinity,
       /** `performance.now()` seconds of the last punch; drives the swing and the hits. */
       punchAt: -Infinity,
       /** Punches thrown this session: which hand throws, and which punch it is (see avatarRig). */
@@ -210,6 +219,26 @@ export const useGame = create(
           punchAt: performance.now() / 1000,
           punchCount: state.punchCount + 1,
           punchPos: at ?? null,
+        }
+        // A new level: celebrate it, and hand over any aura it earns.
+        const before = levelFor(state.strength)
+        const after = levelFor(next.strength)
+        if (after > before) {
+          next.levelUpAt = next.punchAt
+          if (after > state.bestLevel) {
+            next.bestLevel = after
+            const earned = aurasForLevel(after).filter((id) => !state.ownedAuras.includes(id))
+            if (earned.length) {
+              next.ownedAuras = [...state.ownedAuras, ...earned]
+              // The first one is put straight on; after that they wait in the shop.
+              if (!state.aura) next.aura = earned[earned.length - 1]
+              setTimeout(() => {
+                const names = earned.map((id) => getAura(id).name).join(', ')
+                get().notify(`Level ${after}! New aura unlocked: ${names}`, 'success')
+              }, 0)
+            }
+          }
+          playSound('levelUp')
         }
         if (popup) {
           const id = ++popupId
@@ -440,6 +469,35 @@ export const useGame = create(
         }
         set({ wins: wins - glove.cost, owned: [...owned, id], equipped: id })
         notify(`Bought the ${glove.name}! +${formatNumber(glove.power)} Strength per punch`, 'success')
+        playSound('unlock')
+      },
+
+      /**
+       * An aura's button in the shop: buy it if it is for sale and not owned, wear it
+       * if it is owned, take it off if it is already on. A level aura not yet earned
+       * just says how far there is to go.
+       */
+      pickAura: (id) => {
+        const { ownedAuras, aura, wins, bestLevel, notify } = get()
+        const def = getAura(id)
+        if (!def) return
+        if (ownedAuras.includes(id)) {
+          const on = aura !== id
+          set({ aura: on ? id : null })
+          notify(on ? `Now wearing the ${def.name}` : 'Aura off')
+          playSound(on ? 'equip' : 'click')
+          return
+        }
+        if (def.level) {
+          notify(`Reach Level ${def.level} to unlock the ${def.name} (best so far: ${bestLevel})`, 'error')
+          return
+        }
+        if (wins < def.cost) {
+          notify(`Need ${formatNumber(def.cost - wins)} more Wins for the ${def.name}`, 'error')
+          return
+        }
+        set({ wins: wins - def.cost, ownedAuras: [...ownedAuras, id], aura: id })
+        notify(`Bought the ${def.name}!`, 'success')
         playSound('unlock')
       },
 

@@ -1,6 +1,6 @@
 import { Billboard } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { Suspense, useRef } from 'react'
+import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Quaternion, Vector3 } from 'three'
 
 import { remotePositions, remoteStates, useLobby } from '../net/lobbyClient'
@@ -16,6 +16,8 @@ import { playSound } from './sound'
 import { AvatarBoundary, StandInBody } from './AvatarBoundary'
 import { PLAYER_HEIGHT } from './Player'
 import PlayerAvatar from './PlayerAvatar'
+import PlayerFx from './PlayerFx'
+import { getAura } from './auras'
 import { Label } from './world/Effects'
 import { PetModel } from './world/PetModel'
 
@@ -62,6 +64,16 @@ function RemotePlayer({ id, player }) {
   const petWalkRef = useRef({ speed: 0 })
   /** Their footprints waiting to be drawn, and how far they have walked since the last. */
   const steps = useRef([])
+  /** The middles of their two fists, for their gloves' trails. */
+  const fists = useRef({})
+  /** Their level as last seen, and when it last went up. */
+  const level = useRef({ seen: player.level ?? 1, at: -Infinity })
+  const levelUpRef = useMemo(() => ({ get current() { return level.current.at } }), [])
+  useEffect(() => {
+    const l = level.current
+    if ((player.level ?? 1) > l.seen) l.at = performance.now() / 1000
+    l.seen = player.level ?? 1
+  }, [player.level])
   const stride = useRef({ walked: 0, side: 1, x: null, z: null })
 
   useFrame((state, delta) => {
@@ -150,11 +162,12 @@ function RemotePlayer({ id, player }) {
     if (track.sw !== pu.sw) {
       if (pu.sw !== null && track.sw > pu.sw) {
         for (let n = Math.max(pu.sw + 1, track.sw - 1); n <= track.sw; n++) {
-          const { right, style } = punchFor(n)
-          if (right) {
+          const { right, both, style } = punchFor(n, !m.grounded)
+          if (right || both) {
             pu.rAt = t
             pu.styleR = style
-          } else {
+          }
+          if (!right || both) {
             pu.lAt = t
             pu.styleL = style
           }
@@ -177,6 +190,9 @@ function RemotePlayer({ id, player }) {
   })
 
   const petDef = player.pet ? getPet(player.pet) : null
+  const glove = getGlove(player.glove)
+  const aura = getAura(player.aura)
+  const fighting = useRings((s) => s.rings.some((r) => r.s !== 'open' && r.f.includes(id)))
 
   const standIn = <StandInBody height={PLAYER_HEIGHT} />
   return (
@@ -190,19 +206,24 @@ function RemotePlayer({ id, player }) {
                 equipped={player.avatar?.equipped ?? null}
                 proportions={player.avatar?.proportions}
                 gloveId={player.glove}
+                fistsRef={fists}
                 targetHeight={PLAYER_HEIGHT}
                 motionRef={motion}
               />
             </Suspense>
           </AvatarBoundary>
         </group>
-        <Billboard position={[0, PLAYER_HEIGHT / 2 + 0.55, 0]}>
-          <Label lines={[player.name]} position={[0, 0, 0]} size={[3, 0.6]} style={{ width: 512 }} />
-        </Billboard>
+        {/* In a ring the fight's own bar carries the name (see RingDirector). */}
+        {!fighting && (
+          <Billboard position={[0, PLAYER_HEIGHT / 2 + 0.55, 0]}>
+            <Label lines={[player.name]} position={[0, 0, 0]} size={[3, 0.6]} style={{ width: 512 }} />
+          </Billboard>
+        )}
       </group>
       {isFootprintSet(player.footprints) && (
         <FootprintTrail key={player.footprints} gloveId={player.footprints} stepsRef={steps} />
       )}
+      <PlayerFx followRef={body} motionRef={motion} fistsRef={fists} glove={glove} aura={aura} levelUpRef={levelUpRef} />
       {petDef && (
         <group ref={pet} scale={1}>
           <PetModel pet={petDef} walkRef={petWalkRef} />

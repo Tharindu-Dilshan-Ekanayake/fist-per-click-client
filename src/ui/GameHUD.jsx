@@ -298,6 +298,30 @@ function AutoWinsTicker() {
 }
 
 /**
+ * "LEVEL UP!" across the middle of the screen for a moment each time a new level is
+ * reached, with the level under it. Keyed on the moment, so each one plays afresh.
+ */
+function LevelUpBanner() {
+  const at = useGame((s) => s.levelUpAt)
+  const level = useGame((s) => levelFor(s.strength))
+  const touch = useTouchDevice()
+  // Which level-up has finished playing; the banner shows until the latest one has.
+  const [done, setDone] = useState(null)
+  useEffect(() => {
+    if (!Number.isFinite(at)) return undefined
+    const id = setTimeout(() => setDone(at), 1500)
+    return () => clearTimeout(id)
+  }, [at])
+  if (!Number.isFinite(at) || done === at) return null
+  return (
+    <div key={at} className="ring-shout pointer-events-none fixed inset-x-0 top-[24%] z-20 text-center" style={OUTLINE}>
+      <div className={touch ? 'text-4xl text-yellow-300' : 'text-7xl text-yellow-300'}>LEVEL UP!</div>
+      <div className={touch ? 'text-xl text-white' : 'text-3xl text-white'}>Level {level}</div>
+    </div>
+  )
+}
+
+/**
  * Big trophy and Wins total, top left under the player card, with the pet's Wins
  * multiplier under it whenever one is out (see petWinsMultiplier).
  */
@@ -534,6 +558,7 @@ export function GameHUD() {
       <WinsCounter />
       <LeftActionRail />
       <RingHUD />
+      <LevelUpBanner />
       <PromoStack />
       <PetsPanel />
       <RebirthPanel />

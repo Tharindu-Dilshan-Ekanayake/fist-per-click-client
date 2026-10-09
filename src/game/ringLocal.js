@@ -1,24 +1,24 @@
-import { sendRingEnter, sendRingLeave } from '../net/lobbyClient'
+import { sendPadEnter, sendPadLeave } from '../net/lobbyClient'
 import { useGame } from './gameStore'
 
 /**
- * The local player's side of the boxing rings, kept in a module so the rings'
- * sensors (BoxingRing) and RingDirector can share it without a React round trip.
+ * The local player's side of the boxing rings, kept in a module so the rings' pads
+ * (BoxingRing) and RingDirector can share it without a React round trip.
  *
- * `inside` is the ring whose canvas we are standing on, or -1; `askedAt` when we last
- * asked the server to let us in; `koHome` when to send us back to the lobby after a
- * knockout (`performance.now()` seconds, 0 for never).
+ * `pad` is the pad we are standing on, `{ r, slot }`, or null; `askedAt` when we last
+ * asked the server for it; `homeAt` / `home` when and where to put us once a fight is
+ * over (`performance.now()` seconds, 0 for never).
  */
-export const ringLocal = { inside: -1, askedAt: -Infinity, koHome: 0 }
+export const ringLocal = { pad: null, askedAt: -Infinity, homeAt: 0, home: null }
 
-/** A ring's sensor saw us step onto (or off) its canvas. */
-export function ringSensor(index, inside) {
-  if (inside) {
-    ringLocal.inside = index
+/** A pad's sensor saw us step onto (or off) it. */
+export function ringPad(r, slot, on) {
+  if (on) {
+    ringLocal.pad = { r, slot }
     ringLocal.askedAt = performance.now() / 1000
-    sendRingEnter(index, useGame.getState().strength)
-  } else if (ringLocal.inside === index) {
-    ringLocal.inside = -1
-    sendRingLeave(index)
+    sendPadEnter(r, slot, useGame.getState().strength)
+  } else if (ringLocal.pad?.r === r && ringLocal.pad.slot === slot) {
+    ringLocal.pad = null
+    sendPadLeave(r, slot)
   }
 }

@@ -1,6 +1,6 @@
 import { useFrame } from '@react-three/fiber'
 import { CapsuleCollider, RigidBody, useRapier } from '@react-three/rapier'
-import { Suspense, useRef } from 'react'
+import { Suspense, useMemo, useRef } from 'react'
 import { Quaternion, Vector3 } from 'three'
 
 import { aim } from './aim'
@@ -11,6 +11,9 @@ import { leaveFootprint } from './footprintSets'
 import { useGame } from './gameStore'
 import { readInput } from './input'
 import PlayerAvatar from './PlayerAvatar'
+import PlayerFx from './PlayerFx'
+import { getAura } from './auras'
+import { getGlove } from './gloves'
 import { WALK_SPEED } from './progression'
 import { playSound } from './sound'
 import useKeyboard from './useKeyboard'
@@ -34,6 +37,8 @@ const JUMP_VELOCITY = 7.6
 const GUARD_HOLD_S = 1.6
 /** How far from a wall's middle the player steps in to punch it. */
 const WALL_STAND = 1.25
+/** How far from a ring opponent the player closes in to. */
+const RING_STAND = 1.5
 /** Close enough to where we are stepping to; stops the last few centimetres jittering. */
 const STEP_SLACK = 0.12
 /** Falling below this puts the player back at their spawn point. */
@@ -70,6 +75,14 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
   // ref. Fall back to a local one when used standalone.
   const localBodyRef = useRef(null)
   const bodyRef = externalBodyRef || localBodyRef
+  const localAnchorRef = useRef(null)
+  const followRef = anchorRef || localAnchorRef
+  /** The middles of the two fists, for the gloves' trails (see PlayerFx). */
+  const fistsRef = useRef({})
+  const glove = getGlove(useGame((s) => s.equipped))
+  const aura = getAura(useGame((s) => s.aura))
+  /** When we last levelled up, read live from the store by PlayerFx. */
+  const levelUpRef = useMemo(() => ({ get current() { return useGame.getState().levelUpAt } }), [])
   const visualRef = useRef(null)
   useKeyboard()
   const { rapier, world } = useRapier()
@@ -185,6 +198,12 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
         const side = here.z > game.nearWall.z ? 1 : -1
         const dz = game.nearWall.z + side * WALL_STAND - here.z
         if (dz * side < 0) step = [0, dz]
+      } else if (aim.ring && aim.target && performance.now() / 1000 - game.punchAt < 0.6) {
+        // In the ring: close in on the opponent, to a glove's length away.
+        const dx = aim.target[0] - here.x
+        const dz = aim.target[2] - here.z
+        const d = Math.hypot(dx, dz)
+        if (d > RING_STAND + STEP_SLACK) step = [(dx / d) * (d - RING_STAND), (dz / d) * (d - RING_STAND)]
       }
       const gap = step ? Math.hypot(step[0], step[1]) : 0
       if (!staggered && gap > STEP_SLACK) {
@@ -244,11 +263,12 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
     const pu = punches.current
     if (game.punchCount !== pu.count) {
       if (game.punchCount > pu.count) {
-        const { right, style } = punchFor(game.punchCount)
-        if (right) {
+        const { right, both, style } = punchFor(game.punchCount, !grounded)
+        if (right || both) {
           pu.rAt = game.punchAt
           pu.styleR = style
-        } else {
+        }
+        if (!right || both) {
           pu.lAt = game.punchAt
           pu.styleL = style
         }
@@ -293,6 +313,8 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
   })
 
   return (
+    <>
+    <PlayerFx followRef={followRef} motionRef={motionRef} fistsRef={fistsRef} glove={glove} aura={aura} levelUpRef={levelUpRef} local />
     <RigidBody
       ref={bodyRef}
       position={position}
@@ -307,7 +329,7 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
     >
       <CapsuleCollider args={[CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS]} />
       {/* Empty, and at the body's own origin: the smoothed position to follow. */}
-      <group ref={anchorRef} />
+      <group ref={followRef} />
       {/* Avatar origin is at the feet; the capsule origin is at its centre. */}
       <group ref={visualRef} position={[0, -PLAYER_HEIGHT / 2, 0]}>
         {/* The avatar downloads on its own, so the body (and the camera following
@@ -322,11 +344,13 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
               onReady={onAvatarReady}
               targetHeight={PLAYER_HEIGHT}
               motionRef={motionRef}
+              fistsRef={fistsRef}
             />
           </Suspense>
         </AvatarBoundary>
       </group>
     </RigidBody>
+    </>
   )
 }
 

@@ -406,17 +406,26 @@ const twist = (rig, name, angle) => rotateBone(rig, name, 'axisY', angle)
  */
 export const PUNCH_S = 0.3
 
-/** The punches each hand throws in turn. */
-export const PUNCH_STYLES = ['jab', 'hook', 'uppercut']
+/** The punches each hand throws in turn, round and round. */
+export const PUNCH_STYLES = ['jab', 'cross', 'hook', 'uppercut', 'haymaker']
+
+/** Every this many punches, both fists go at once. */
+export const DOUBLE_EVERY = 10
 
 /**
- * Which hand throws punch number `n` (1-based) and what kind of punch it is: right
- * then left, two jabs, two hooks, two uppercuts, round again.
+ * Which hand throws punch number `n` (1-based), and what kind of punch it is.
+ *
+ * On the ground the hands take turns, right then left, two of each punch in
+ * PUNCH_STYLES; every DOUBLE_EVERY-th punch is a two-fisted blast (`both`). In the
+ * air every punch is a flying "superman" punch. Both the puncher and everyone
+ * watching work this out from the same count, so they all see the same punch.
  */
-export function punchFor(n) {
+export function punchFor(n, airborne = false) {
   const right = n % 2 === 1
+  if (airborne) return { right, both: false, style: 'superman' }
+  if (n % DOUBLE_EVERY === 0) return { right, both: true, style: 'double' }
   const style = PUNCH_STYLES[Math.floor((n - 1) / 2) % PUNCH_STYLES.length]
-  return { right, style }
+  return { right, both: false, style }
 }
 
 /**
@@ -450,13 +459,18 @@ const easeOut = (v) => 1 - (1 - v) ** 3
  * out to full reach, a beat held there, then back to guard. Below zero is the pull
  * back.
  */
-function strike(p) {
+function strike(p, style) {
   if (!(p >= 0 && p < 1)) return 0
-  if (p < 0.1) return -0.3 * smooth(p / 0.1)
-  if (p < 0.32) return -0.3 + 1.3 * easeOut((p - 0.1) / 0.22)
+  // The big ones draw back further before they let go.
+  const windup = WINDUP[style] ?? 0.3
+  if (p < 0.1) return -windup * smooth(p / 0.1)
+  if (p < 0.32) return -windup + (1 + windup) * easeOut((p - 0.1) / 0.22)
   if (p < 0.45) return 1
   return 1 - smooth((p - 0.45) / 0.55)
 }
+
+/** How far back each punch draws before it is thrown. */
+const WINDUP = { jab: 0.2, cross: 0.35, hook: 0.35, uppercut: 0.45, haymaker: 0.7, double: 0.5, superman: 0.25 }
 
 /**
  * The guard and where each kind of punch reaches to, as [upper-arm swing, upper-arm
@@ -468,14 +482,22 @@ const GUARD = [-0.55, 0.22, -1.95]
 const RUN_GUARD = [-0.3, 0.12, -1.7]
 const REACH = {
   jab: [-1.55, -0.18, -0.12],
+  cross: [-1.62, -0.05, -0.04],
   hook: [-1.25, 0.95, -1.35],
   uppercut: [-1.75, -0.12, -1.55],
+  haymaker: [-2.05, 0.7, -0.75],
+  double: [-1.6, -0.32, -0.08],
+  superman: [-1.85, -0.12, -0.04],
 }
-/** How far the torso turns into each punch, and leans into it. */
+/** How far the torso turns into each punch, and leans into it (negative: forward). */
 const BODY = {
   jab: { twist: 0.42, lean: -0.12 },
+  cross: { twist: 0.75, lean: -0.2 },
   hook: { twist: 0.62, lean: -0.06 },
   uppercut: { twist: 0.3, lean: 0.12 },
+  haymaker: { twist: 0.9, lean: -0.26 },
+  double: { twist: 0, lean: -0.3 },
+  superman: { twist: 0.35, lean: -0.32 },
 }
 
 /**
@@ -492,7 +514,7 @@ function poseArms(rig, motion, ratio) {
   for (const [hand, side] of [['R', 1], ['L', -1]]) {
     const p = hand === 'R' ? motion.punchR : motion.punchL
     const style = (hand === 'R' ? motion.styleR : motion.styleL) ?? 'jab'
-    const s = strike(p)
+    const s = strike(p, style)
     const reach = REACH[style] ?? REACH.jab
     // The resting arm: the guard, sinking towards a running carry the faster you go.
     const rest = GUARD.map((g, i) => g + (RUN_GUARD[i] - g) * (1 - guard) * ratio)
@@ -517,6 +539,18 @@ function poseArms(rig, motion, ratio) {
   twist(rig, 'Spine1', bodyTwist * 0.6)
   twist(rig, 'Spine2', bodyTwist * 0.4)
   swing(rig, 'Spine1', bodyLean)
+
+  // The flying punch: the whole body stretches out flat behind the fist, legs back.
+  const flying = Math.max(
+    motion.styleR === 'superman' ? Math.max(0, strike(motion.punchR, 'superman')) : 0,
+    motion.styleL === 'superman' ? Math.max(0, strike(motion.punchL, 'superman')) : 0,
+  )
+  if (flying > 0 && !motion.grounded) {
+    rig.root.rotation.x = 0.55 * flying
+    swing(rig, 'LegL1', 0.5 * flying)
+    swing(rig, 'LegR1', 0.35 * flying)
+    swing(rig, 'LegL2', 0.4 * flying)
+  }
 }
 
 /** Taking a hit, going down, and the victory cheer. */

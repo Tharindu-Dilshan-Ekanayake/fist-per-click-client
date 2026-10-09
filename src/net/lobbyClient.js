@@ -3,7 +3,7 @@ import { create } from 'zustand'
 
 import { waitForSDK } from '../bloxity/sdk'
 import { dropFx } from '../game/fightFx'
-import { clearRings, ringEvents, setRingHp, setRings } from '../game/ringState'
+import { clearRings, markRingStart, ringEvents, setRingHp, setRings } from '../game/ringState'
 import { hosting, LOCAL_SERVER_URL, matchmakerOptions, viaMatchmaker } from './hosting'
 import { addSnapshot, newTrack } from './snapshots'
 
@@ -49,7 +49,7 @@ export const remotePositions = new Map()
 /** Only used without the matchmaker (local development): one fixed server. */
 const localClient = viaMatchmaker ? null : new Client(LOCAL_SERVER_URL.replace(/^http/, 'ws'))
 let room = null
-let profile = { name: 'Player', avatar: null, glove: null, pet: null, trainer: null, footprints: null }
+let profile = { name: 'Player', avatar: null, glove: null, pet: null, trainer: null, footprints: null, aura: null, level: 1 }
 let stopped = true
 let retries = 0
 let retryTimer = null
@@ -70,6 +70,8 @@ function profileOf(player, previous) {
     pet: player.pet,
     trainer: player.trainer,
     footprints: player.footprints ?? null,
+    aura: player.aura ?? null,
+    level: player.level ?? 1,
   }
 }
 
@@ -121,6 +123,13 @@ function attach(joined) {
     setRingHp(message.r, message.hp)
     ringEvents.hit(message)
   })
+  joined.onMessage('ringStart', (message) => {
+    // The fighters are in from this moment, before the next snapshot says so: the
+    // teleport into the ring must not meet a ring that still thinks they are outside.
+    markRingStart(message.r, message.f)
+    ringEvents.start(message)
+  })
+  joined.onMessage('ringCancel', (message) => ringEvents.cancel(message))
   joined.onMessage('ringKO', (message) => ringEvents.ko(message))
   joined.onMessage('ringDeny', (message) => ringEvents.deny(message))
   joined.onMessage('ringMiss', (message) => ringEvents.miss(message))
@@ -205,10 +214,10 @@ export function sendState(p, sw, ts = performance.now()) {
   room?.send('state', { p, sw, ts: Math.round(ts) })
 }
 
-/** Stepped onto ring `r`'s canvas, with this much Strength. */
-export const sendRingEnter = (r, power) => room?.send('ringEnter', { r, power })
+/** Stepped onto ring `r`'s pad `slot` (0 red, 1 blue), with this much Strength. */
+export const sendPadEnter = (r, slot, power) => room?.send('padEnter', { r, slot, power })
 /** Stepped off it. */
-export const sendRingLeave = (r) => room?.send('ringLeave', { r })
+export const sendPadLeave = (r, slot) => room?.send('padLeave', { r, slot })
 /** Threw a punch in it. */
 export const sendRingPunch = (r, power) => room?.send('ringPunch', { r, power })
 /** Whether there is a server to talk to right now. */

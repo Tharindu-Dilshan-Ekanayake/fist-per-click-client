@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { Vector3 } from 'three'
 
 import { readTurn } from './input'
+import { CAMERA_RAY } from './physicsGroups'
 import { playerPosition } from './playerAnchor'
 import { useSettings } from './settings'
 
@@ -391,7 +392,7 @@ export function FollowCamera({ bodyRef, anchorRef }) {
       s.zoom + COLLIDE_PAD,
       true,
       rapier.QueryFilterFlags.EXCLUDE_SENSORS,
-      undefined,
+      CAMERA_RAY,
       undefined,
       body,
     )

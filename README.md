@@ -6,10 +6,20 @@ the Win pads at the end of each stage pay Wins (1, 5, 10, 50, 250…), and Wins 
 bigger boxing gloves, punching bags to train on and pets. Rebirth for a permanent
 multiplier; Rebirth 3 opens **Space World**.
 
-Behind the training zone are four **boxing rings**: two players step in, the ropes
-go solid, and they fight — the stronger fist does more damage, and whoever is
-knocked out lands back in the lobby while the winner collects Wins. Everyone in the
-lobby can watch: each ring has a scoreboard over it.
+Behind the training zone are four **boxing rings**. Their ropes are solid — nobody
+walks in or falls out. In front of each are two pads, red corner and blue corner:
+when both have someone on them, those two are taken into the ring and fight. The
+stronger fist does more damage; whoever is knocked out (or behind on health when the
+60-second round ends) lands back in the lobby, and the winner steps out with Wins.
+Everyone can watch through the ropes: each fighter has a health bar over their
+head and each ring a scoreboard.
+
+Punches go jab, cross, hook, uppercut, haymaker (hand by hand), every tenth is a
+two-fisted blast, and a punch in mid-jump is a flying superman punch that lands
+with a shockwave. **Auras** (a glow round the player) come free at levels 3, 6, 10,
+14 and 20 or are bought in the shop, and every pair of gloves has its own trail
+off the fists — fire, frost, sparks, stars... — on walking and on every punch.
+Everyone in the lobby sees everyone else's aura, trails and level-ups.
 
 React + three.js (react-three-fiber, Rapier physics), with the Bloxity SDK for login
 and avatars, and a Colyseus game server for the lobby and the rings. Everything in
@@ -41,8 +51,10 @@ on its own, and `window.__fpc` (the store, `teleport(x, y, z)`) and
 | `src/game/walls.js` | wall health and the stage payouts (`STAGE_WINS`) |
 | `src/game/world/StageWall.jsx` | a wall: its cracks, its health bar, how it bursts |
 | `src/game/trainers.js` | the punching bags and their multipliers |
-| `src/game/rings.js` | where the four boxing rings are (the server keeps a copy) |
-| `src/game/RingDirector.jsx` | your side of a ring fight: punches, hits, knockouts |
+| `src/game/rings.js` | where the four boxing rings and their pads are (the server keeps a copy) |
+| `src/game/RingDirector.jsx` | your side of a ring fight: into the ring, hits, knockouts, the health bars |
+| `src/game/auras.js` | the auras: which levels give them, what the rest cost |
+| `src/game/PlayerFx.jsx`, `particles.js` | auras, glove trails, level-up bursts, shockwaves |
 | `src/game/pets.js`, `world/PetModel.jsx` | the pets and how they are drawn |
 | `src/game/passes.js` | the passes (2x Power, 2x Wins, Auto Wins, VIP Wins Pad) |
 | `src/game/cloudSave.js` | loading and saving progress on the game server |

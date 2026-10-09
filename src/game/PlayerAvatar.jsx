@@ -37,6 +37,8 @@ import GloveModel from './GloveModel'
 const HELD_SCALE = 1.3
 /** The worn gloves' trim always glows a little, even a plain pair with no glow of its own. */
 const HELD_MIN_GLOW = 0.28
+/** The middle of a glove's fist, in its own frame (see GloveModel's FIST). */
+const FIST_Y = -0.23
 /** Gloves sit a touch down the hand from the palm, so the cuff covers the wrist. */
 const HELD_OFFSET = [0, -0.03, 0]
 
@@ -81,6 +83,7 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
     equipped: remoteEquipped = null,
     proportions: remoteProportions,
     gloveId,
+    fistsRef,
     ...props
   },
   ref,
@@ -273,6 +276,12 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
         createPortal(
           <group scale={HELD_SCALE / fit.scale} position={HELD_OFFSET}>
             <GloveModel glove={glove} side={-1} minGlow={HELD_MIN_GLOW} flashRef={flashR} sparkles={!remote} />
+            <object3D
+              position={[0, FIST_Y * glove.size, 0]}
+              ref={(el) => {
+                if (fistsRef) fistsRef.current = { ...fistsRef.current, right: el }
+              }}
+            />
           </group>,
           hands.right,
         )}
@@ -280,6 +289,12 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
         createPortal(
           <group scale={HELD_SCALE / fit.scale} position={HELD_OFFSET}>
             <GloveModel glove={glove} side={1} minGlow={HELD_MIN_GLOW} flashRef={flashL} sparkles={!remote} />
+            <object3D
+              position={[0, FIST_Y * glove.size, 0]}
+              ref={(el) => {
+                if (fistsRef) fistsRef.current = { ...fistsRef.current, left: el }
+              }}
+            />
           </group>,
           hands.left,
         )}

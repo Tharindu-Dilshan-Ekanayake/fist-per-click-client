@@ -319,6 +319,24 @@ const SOUNDS = {
     tone({ at: 0.35, freq: 220, to: 1400, attack: 0.25, decay: 0.3, gain: 0.05 })
   },
 
+  /** A new level: a quick climbing sparkle and a bright chord. */
+  levelUp() {
+    for (const [i, freq] of [NOTE.C5, NOTE.E5, NOTE.G5, NOTE.C6, NOTE.E6].entries()) {
+      tone({ at: i * 0.05, type: 'triangle', freq, decay: 0.18, gain: 0.11 })
+    }
+    for (const freq of [NOTE.C6, NOTE.E6, NOTE.G6]) {
+      tone({ at: 0.26, type: 'triangle', freq, attack: 0.01, decay: 0.7, gain: 0.06 })
+    }
+    hiss({ at: 0.05, freq: 900, to: 6000, q: 1, attack: 0.2, decay: 0.25, gain: 0.07 })
+  },
+
+  /** A flying punch hitting the ground: a deep thump and a shower of grit. */
+  shockwave() {
+    tone({ freq: 110, to: 30, attack: 0.003, decay: 0.5, gain: 0.5 })
+    hiss({ filter: 'lowpass', freq: 1600, to: 120, attack: 0.004, decay: 0.45, gain: 0.35 })
+    hiss({ at: 0.04, filter: 'highpass', freq: 3000, attack: 0.001, decay: 0.08, gain: 0.08 })
+  },
+
   /** A new stage reached: a short fanfare, after the wall's crash. */
   stage() {
     const at = 0.45
@@ -339,7 +357,7 @@ const SOUNDS = {
 }
 
 /** Shortest gap between two plays of the same sound, so rapid repeats don't pile up. */
-const MIN_GAP_S = { step: 0.08, punch: 0.03, punchHit: 0.04, hurt: 0.06, whoosh: 0.05, bell: 1, cheer: 1, wallHit: 0.04, error: 0.25 }
+const MIN_GAP_S = { step: 0.08, punch: 0.03, punchHit: 0.04, hurt: 0.06, whoosh: 0.05, bell: 1, cheer: 1, levelUp: 0.3, shockwave: 0.2, wallHit: 0.04, error: 0.25 }
 const lastPlayed = {}
 
 /** Plays one of SOUNDS by name. */

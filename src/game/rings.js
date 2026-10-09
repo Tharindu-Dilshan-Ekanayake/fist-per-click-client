@@ -21,22 +21,35 @@ export const RING_MAX_HP = 100
 
 /** Row of rings, west to east. `mat` is the canvas, `skirt` the apron round it. */
 export const RINGS = [
-  { id: 0, name: 'RING 1', x: -22.5, z: 76, mat: '#f6f4ee', skirt: '#2a64e8', accent: '#5cc4ff', ropes: ['#ff3b3b', '#ffffff', '#2a64e8'] },
-  { id: 1, name: 'RING 2', x: -7.5, z: 76, mat: '#f4f8ff', skirt: '#1e9e58', accent: '#7dff9a', ropes: ['#ffd23f', '#ffffff', '#1e9e58'] },
-  { id: 2, name: 'RING 3', x: 7.5, z: 76, mat: '#ff3b3b', skirt: '#2b2b33', accent: '#ff8a7a', ropes: ['#ffffff', '#2b2b33', '#ffffff'] },
-  { id: 3, name: 'RING 4', x: 22.5, z: 76, mat: '#d86bff', skirt: '#3a1f6e', accent: '#ff7af5', ropes: ['#ff7af5', '#ffffff', '#7ff9ff'] },
+  { id: 0, name: 'RING 1', x: -24, z: 76, mat: '#f6f4ee', skirt: '#2a64e8', accent: '#5cc4ff', ropes: ['#ff3b3b', '#ffffff', '#2a64e8'] },
+  { id: 1, name: 'RING 2', x: -8, z: 76, mat: '#f4f8ff', skirt: '#1e9e58', accent: '#7dff9a', ropes: ['#ffd23f', '#ffffff', '#1e9e58'] },
+  { id: 2, name: 'RING 3', x: 8, z: 76, mat: '#ff3b3b', skirt: '#2b2b33', accent: '#ff8a7a', ropes: ['#ffffff', '#2b2b33', '#ffffff'] },
+  { id: 3, name: 'RING 4', x: 24, z: 76, mat: '#d86bff', skirt: '#3a1f6e', accent: '#ff7af5', ropes: ['#ff7af5', '#ffffff', '#7ff9ff'] },
 ]
 
-/** Where a fighter stands to start: the red corner (slot 0) and the blue (slot 1). */
-export const cornerOf = (ring, slot) => [ring.x + (slot === 0 ? -2.6 : 2.6), ring.z]
+/**
+ * The two pads in front of every ring (its south side, facing the way in), red
+ * corner to the west and blue to the east: stand on one, and when someone stands on
+ * the other you are both taken into the ring.
+ */
+export const PAD_OFFSET = 2.7
+/** How far in front of the ring's middle the pads are. */
+export const PAD_FRONT = 8
+export const PAD_RADIUS = 1.15
+export const CORNER_COLORS = ['#ff4a4a', '#3f8cff']
+export const CORNER_NAMES = ['RED CORNER', 'BLUE CORNER']
 
-/** Where you land when you step (or are pushed) out of a ring: the foot of its ramp. */
-export const ringExit = (ring) => [ring.x, 2, ring.z - RING_PLATFORM_HALF - 4.8]
+/** Where ring `ring`'s pad `slot` is: [x, z]. */
+export const padOf = (ring, slot) => [ring.x + (slot === 0 ? -PAD_OFFSET : PAD_OFFSET), ring.z - PAD_FRONT]
 
-/** The ring whose canvas `[x, z]` is over, or null. `margin` widens the test. */
-export function ringAt(x, z, margin = 0) {
-  for (const ring of RINGS) {
-    if (Math.abs(x - ring.x) <= RING_HALF + margin && Math.abs(z - ring.z) <= RING_HALF + margin) return ring
-  }
-  return null
+/** Where a fighter is put to start: in their corner's half, facing the other. */
+export const fightSpot = (ring, slot) => [ring.x + (slot === 0 ? -1.3 : 1.3), RING_FLOOR + 1.2, ring.z]
+
+/** Where a fighter comes out when the fight is over: the ground beside their pad. */
+export const exitSpot = (ring, slot) => {
+  const [x, z] = padOf(ring, slot)
+  return [x + (slot === 0 ? -2.4 : 2.4), 2, z]
 }
+
+/** Where anyone who somehow ends up on a canvas they should not be on is put. */
+export const ringExit = (ring) => [ring.x, 2, ring.z - RING_PLATFORM_HALF - 2.4]

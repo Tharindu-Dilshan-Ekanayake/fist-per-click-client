@@ -339,3 +339,20 @@ canvas {
   background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 30, 30, 0.55) 100%);
   animation: ring-hurt 0.45s ease-out forwards;
 }
+
+/* The shop's aura tiles: the glow breathes, the way the aura does in the world. */
+@keyframes aura-preview {
+  0%,
+  100% {
+    transform: scale(0.94);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.06);
+    filter: brightness(1.25);
+  }
+}
+
+.aura-preview {
+  animation: aura-preview 1.8s ease-in-out infinite;
+}

@@ -7,32 +7,43 @@ import { AdditiveBlending, CanvasTexture, CylinderGeometry, DoubleSide, SRGBColo
 import { useBloxity } from '../../bloxity/BloxityContext'
 import { useLobby } from '../../net/lobbyClient'
 import { FONT_WEIGHT, GAME_FONT } from '../font'
-import { ringSensor } from '../ringLocal'
+import { SEE_THROUGH } from '../physicsGroups'
+import { ringPad } from '../ringLocal'
 import { ringLocked, ringSecondsLeft, useRings } from '../ringState'
-import { RING_FLOOR, RING_HALF, RING_MAX_HP, RING_PLATFORM_HALF, RING_POST_H } from '../rings'
+import {
+  CORNER_COLORS,
+  CORNER_NAMES,
+  padOf,
+  PAD_RADIUS,
+  RING_FLOOR,
+  RING_HALF,
+  RING_MAX_HP,
+  RING_PLATFORM_HALF,
+  RING_POST_H,
+} from '../rings'
+import { Label } from './Effects'
 import { geometry, merge } from './geometry'
+import PadGlow from './PadGlow'
 import { labelTexture, radialGlowTexture, shade } from './textures'
 
 /** Rope heights above the canvas. */
 const ROPES = [0.5, 1.0, 1.5]
 /** Where the posts stand: just outside the canvas, on the apron. */
 const POST = RING_HALF + 0.18
-/** The ramp up to the apron, on the side facing the training zone (-Z). */
-const RAMP_LEN = 4.4
-const RAMP_W = 3
-const RAMP_ANGLE = Math.atan2(RING_FLOOR, RAMP_LEN)
-const RAMP_SLOPE = Math.hypot(RING_FLOOR, RAMP_LEN)
-const RAMP_Z = -RING_PLATFORM_HALF - RAMP_LEN / 2
-/** The ropes go solid this far out, all round, while a fight is on. */
+/**
+ * The ropes are a wall, all the time: nobody climbs in through them and nobody falls
+ * out. The only way in is the pads (see RingDirector). Tall enough that a jump off
+ * the apron does not clear it.
+ */
 const BARRIER = RING_HALF + 0.42
-const BARRIER_H = 4.2
+const BARRIER_H = 4.6
 /** The light rig over the ring, and the scoreboard hanging under it. */
 const RIG_Y = 8.2
-const BOARD_Y = 6.4
+const BOARD_Y = 6.6
 const BOARD_W = 4.6
 const BOARD_H = BOARD_W / 2
 
-/** Corner colours: red corner, blue corner, and two neutral white ones. */
+/** Corner posts: red, blue, and two neutral white ones. Red is the west side. */
 const CORNERS = [
   { x: -POST, z: -POST, color: '#ff3b3b' },
   { x: POST, z: POST, color: '#2f7cff' },
@@ -51,7 +62,7 @@ const ropeGeometry = (y) =>
       [-POST, 0, 'z'],
       [POST, 0, 'z'],
     ]) {
-      const g = new CylinderGeometry(0.05, 0.05, len, 8)
+      const g = new CylinderGeometry(0.065, 0.065, len, 8)
       if (along === 'x') g.rotateZ(Math.PI / 2)
       else g.rotateX(Math.PI / 2)
       g.translate(x, RING_FLOOR + y, z)
@@ -106,7 +117,7 @@ function fit(ctx, text, max) {
 
 /**
  * The scoreboard over a ring: its name, what is going on, and both fighters with
- * their health. Redrawn whenever any of that changes.
+ * their health - or, between fights, who is waiting on the pads.
  */
 function drawBoard(ctx, w, h, ring, state, names) {
   ctx.clearRect(0, 0, w, h)
@@ -130,41 +141,42 @@ function drawBoard(ctx, w, h, ring, state, names) {
   outlined(ctx, ring.name, w / 2, 46, 40, '#ffffff')
 
   const now = performance.now()
-  const [a, b] = state.f
+  const open = state.s === 'open'
+  // Between fights the board shows the pads; during one, the fighters.
+  const [a, b] = open ? state.p : state.f
+  const waiting = state.p.filter(Boolean).length
   let status
   let statusFill
   if (state.s === 'countdown') {
     status = `GET READY... ${Math.max(1, Math.ceil(ringSecondsLeft(state, now)))}`
     statusFill = '#ffd23f'
   } else if (state.s === 'fight') {
-    status = 'FIGHT!'
+    status = `FIGHT!  ${Math.ceil(ringSecondsLeft(state, now))}s`
     statusFill = '#ff6a5a'
   } else if (state.s === 'ko') {
     status = 'K.O.!'
     statusFill = '#ff4fd8'
-  } else if (a || b) {
-    status = 'WAITING FOR A CHALLENGER'
+  } else if (waiting === 1) {
+    status = '1 READY - NEED A CHALLENGER'
     statusFill = '#9fe8ff'
   } else {
-    status = 'OPEN - STEP IN TO FIGHT'
+    status = 'STAND ON A PAD TO FIGHT'
     statusFill = '#b4ff8a'
   }
   outlined(ctx, status, w / 2, 98, status.length > 14 ? 26 : 34, statusFill)
 
-  // The two corners: name over a health bar.
   for (const [slot, id] of [[0, a], [1, b]]) {
     const x0 = slot === 0 ? 28 : w / 2 + 10
     const bw = w / 2 - 38
     const y = 150
-    const color = slot === 0 ? '#ff4a4a' : '#3f8cff'
-    ctx.fillStyle = color
+    ctx.fillStyle = CORNER_COLORS[slot]
     ctx.beginPath()
     ctx.roundRect(x0, y - 22, 14, 44, 6)
     ctx.fill()
     ctx.font = font(26)
     const name = id ? fit(ctx, names(id), bw - 26) : '- empty -'
     outlined(ctx, name, x0 + 22, y, 26, id ? '#ffffff' : '#8a8fb0', 'left')
-    const hp = id ? Math.max(0, state.hp[slot]) / RING_MAX_HP : 0
+    const hp = open ? (id ? 1 : 0) : Math.max(0, state.hp[slot]) / RING_MAX_HP
     const by = y + 34
     ctx.fillStyle = INK
     ctx.beginPath()
@@ -180,7 +192,8 @@ function drawBoard(ctx, w, h, ring, state, names) {
       ctx.roundRect(x0 + 4, by + 4, (bw - 8) * hp, 22, 11)
       ctx.fill()
     }
-    outlined(ctx, id ? `${Math.ceil(state.hp[slot])}` : '', x0 + bw / 2, by + 15, 20, '#ffffff')
+    const caption = open ? (id ? 'READY' : '') : id ? `${Math.ceil(state.hp[slot])}` : ''
+    outlined(ctx, caption, x0 + bw / 2, by + 15, 20, '#ffffff')
   }
   outlined(ctx, 'VS', w / 2, 168, 30, '#ffd23f')
 }
@@ -204,12 +217,59 @@ function createBoard(ring) {
 }
 
 /**
- * One boxing ring: a raised platform with a canvas, ropes and corner posts, a ramp
- * up, a light rig over it and a scoreboard everyone in the lobby can read.
+ * One of the two pads beside a ring: a glowing disc in its corner's colour, a sign
+ * over it saying whose it is, and a sensor that tells RingDirector when you step on
+ * or off.
+ */
+function RingPad({ ring, slot, occupant, fightOn }) {
+  const color = CORNER_COLORS[slot]
+  const [px, pz] = padOf(ring, slot)
+  const disc = useRef(null)
+  useFrame(({ clock }) => {
+    if (disc.current) disc.current.emissiveIntensity = (occupant ? 0.9 : 0.45) + 0.2 * Math.sin(clock.elapsedTime * 4 + slot)
+  })
+  const onEnter = ({ other }) => {
+    if (other.rigidBodyObject?.name === 'player') ringPad(ring.id, slot, true)
+  }
+  const onExit = ({ other }) => {
+    if (other.rigidBodyObject?.name === 'player') ringPad(ring.id, slot, false)
+  }
+  const status = occupant
+    ? { text: `${occupant} is ready!`, scale: 0.6, fill: '#b4ff8a' }
+    : { text: fightOn ? 'Wait here for the next fight' : 'Stand here to fight!', scale: 0.6, fill: '#ffe9a8' }
+  return (
+    <group position={[px - ring.x, 0, pz - ring.z]}>
+      <mesh position={[0, 0.1, 0]} receiveShadow>
+        <cylinderGeometry args={[PAD_RADIUS + 0.25, PAD_RADIUS + 0.35, 0.2, 32]} />
+        <meshStandardMaterial color={shade(color, -0.45)} roughness={0.6} />
+      </mesh>
+      <mesh position={[0, 0.22, 0]}>
+        <cylinderGeometry args={[PAD_RADIUS, PAD_RADIUS, 0.06, 32]} />
+        <meshStandardMaterial ref={disc} color={color} emissive={color} emissiveIntensity={0.5} roughness={0.4} />
+      </mesh>
+      <PadGlow color={color} shape="circle" size={PAD_RADIUS * 2 + 0.5} y={0.27} rise={2.2} level={occupant ? 1.2 : 0.8} sparkles={4} phase={ring.id + slot} />
+      <Billboard position={[0, 3.4, 0]}>
+        <Label
+          lines={[{ text: CORNER_NAMES[slot], fill: ['#ffffff', shade(color, 0.3)] }, status]}
+          position={[0, 0, 0]}
+          size={[3.4, 1.2]}
+          style={{ width: 512 }}
+        />
+      </Billboard>
+      <RigidBody type="fixed" colliders={false}>
+        <CuboidCollider sensor args={[PAD_RADIUS - 0.1, 1, PAD_RADIUS - 0.1]} position={[0, 1, 0]} onIntersectionEnter={onEnter} onIntersectionExit={onExit} />
+      </RigidBody>
+    </group>
+  )
+}
+
+/**
+ * One boxing ring: a raised platform with a canvas, ropes and corner posts, a light
+ * rig over it, a scoreboard everyone in the lobby can read, and a pad either side.
  *
  * Who is fighting is the server's business (see RingDirector and the server's
- * rings.js). This only shows it - and while two fighters are in, the ropes turn into
- * a glowing wall that nobody walks through, in or out.
+ * rings.js). This only shows it. The ropes are solid all the time - nobody climbs
+ * in or falls out - and they shimmer while a fight is on.
  *
  * @param {{ ring: import('../rings').RINGS[number] }} props
  */
@@ -227,7 +287,7 @@ export function BoxingRing({ ring }) {
   // Who is who: our own name for us, the lobby's for everyone else.
   const names = useMemo(() => (id) => (id === selfId ? myName : players[id]?.name ?? 'Player'), [selfId, myName, players])
 
-  // Redrawn when anything on it changes; the countdown also ticks it once a second.
+  // Redrawn when anything on it changes; the clocks also tick it once a second.
   const ticked = useRef(null)
   useEffect(() => board.draw(state, names), [board, state, names])
 
@@ -235,7 +295,7 @@ export function BoxingRing({ ring }) {
   const glow = useRef(null)
   useFrame(({ clock }) => {
     const t = clock.elapsedTime
-    if (state.s === 'countdown') {
+    if (state.s === 'countdown' || state.s === 'fight') {
       const second = Math.ceil(ringSecondsLeft(state))
       if (ticked.current !== second) {
         ticked.current = second
@@ -245,7 +305,8 @@ export function BoxingRing({ ring }) {
     for (const mesh of field.current) {
       if (!mesh) continue
       mesh.visible = locked
-      if (locked) mesh.material.opacity = 0.22 + 0.1 * Math.sin(t * 4 + mesh.position.x + mesh.position.z)
+      // Faint, so the fight inside and the crowd outside can still see each other.
+      if (locked) mesh.material.opacity = 0.1 + 0.05 * Math.sin(t * 4 + mesh.position.x + mesh.position.z)
     }
     if (glow.current) glow.current.opacity = (state.s === 'fight' ? 0.5 : 0.3) + 0.1 * Math.sin(t * 3)
   })
@@ -267,13 +328,6 @@ export function BoxingRing({ ring }) {
       }),
     [ring],
   )
-
-  const onEnter = ({ other }) => {
-    if (other.rigidBodyObject?.name === 'player') ringSensor(ring.id, true)
-  }
-  const onExit = ({ other }) => {
-    if (other.rigidBodyObject?.name === 'player') ringSensor(ring.id, false)
-  }
 
   return (
     <group position={[ring.x, 0, ring.z]}>
@@ -327,23 +381,9 @@ export function BoxingRing({ ring }) {
       {/* Three ropes, each in its own colour. */}
       {ROPES.map((y, i) => (
         <mesh key={y} geometry={ropeGeometry(y)} castShadow>
-          <meshStandardMaterial color={ring.ropes[i]} roughness={0.45} emissive={ring.ropes[i]} emissiveIntensity={0.12} />
+          <meshStandardMaterial color={ring.ropes[i]} roughness={0.45} emissive={ring.ropes[i]} emissiveIntensity={0.2} />
         </mesh>
       ))}
-
-      {/* The ramp up from the training zone side. */}
-      <group position={[0, RING_FLOOR / 2, RAMP_Z]} rotation={[-RAMP_ANGLE, 0, 0]}>
-        <mesh position={[0, -0.12, 0]} receiveShadow castShadow>
-          <boxGeometry args={[RAMP_W, 0.24, RAMP_SLOPE]} />
-          <meshStandardMaterial color="#3a3f5c" roughness={0.8} />
-        </mesh>
-        {[-1, 1].map((side) => (
-          <mesh key={side} position={[side * (RAMP_W / 2), 0.05, 0]}>
-            <boxGeometry args={[0.1, 0.14, RAMP_SLOPE]} />
-            <meshBasicMaterial color={ring.accent} toneMapped={false} />
-          </mesh>
-        ))}
-      </group>
 
       {/* The light rig, its lamps, and a pool of light on the canvas. */}
       <mesh geometry={rigGeometry()}>
@@ -377,7 +417,7 @@ export function BoxingRing({ ring }) {
         </mesh>
       </Billboard>
 
-      {/* The ropes gone solid: a shimmering wall while two are fighting. */}
+      {/* The ropes' shimmer while a fight is on. */}
       {[0, 1, 2, 3].map((i) => {
         const a = (i * Math.PI) / 2
         return (
@@ -386,15 +426,15 @@ export function BoxingRing({ ring }) {
             ref={(el) => {
               field.current[i] = el
             }}
-            position={[Math.sin(a) * BARRIER, RING_FLOOR + BARRIER_H / 2, Math.cos(a) * BARRIER]}
+            position={[Math.sin(a) * BARRIER, RING_FLOOR + 1.1, Math.cos(a) * BARRIER]}
             rotation={[0, a, 0]}
             visible={false}
           >
-            <planeGeometry args={[BARRIER * 2, BARRIER_H]} />
+            <planeGeometry args={[BARRIER * 2, 2.2]} />
             <meshBasicMaterial
               color={ring.accent}
               transparent
-              opacity={0.25}
+              opacity={0.12}
               blending={AdditiveBlending}
               depthWrite={false}
               side={DoubleSide}
@@ -405,36 +445,37 @@ export function BoxingRing({ ring }) {
         )
       })}
 
+      {[0, 1].map((slot) => {
+        const id = state.p[slot]
+        return (
+          <RingPad
+            key={slot}
+            ring={ring}
+            slot={slot}
+            occupant={id ? names(id) : null}
+            fightOn={state.s !== 'open'}
+          />
+        )
+      })}
+
       <RigidBody type="fixed" colliders={false}>
         <CuboidCollider args={[RING_PLATFORM_HALF, RING_FLOOR / 2, RING_PLATFORM_HALF]} position={[0, RING_FLOOR / 2, 0]} />
-        <CuboidCollider
-          args={[RAMP_W / 2, 0.15, RAMP_SLOPE / 2]}
-          position={[0, RING_FLOOR / 2 - 0.15 * Math.cos(RAMP_ANGLE), RAMP_Z]}
-          rotation={[-RAMP_ANGLE, 0, 0]}
-        />
-        {/* Posts are solid; ropes only when the fight is on. */}
+        {/* Posts are solid, and so are the ropes - always. */}
         {CORNERS.map((c, i) => (
           <CuboidCollider key={i} args={[0.2, RING_POST_H / 2, 0.2]} position={[c.x, RING_FLOOR + RING_POST_H / 2, c.z]} />
         ))}
-        {locked &&
-          [0, 1, 2, 3].map((i) => {
-            const a = (i * Math.PI) / 2
-            return (
-              <CuboidCollider
-                key={`b${i}`}
-                args={[BARRIER + 0.2, BARRIER_H / 2, 0.15]}
-                position={[Math.sin(a) * BARRIER, RING_FLOOR + BARRIER_H / 2, Math.cos(a) * BARRIER]}
-                rotation={[0, a, 0]}
-              />
-            )
-          })}
-        <CuboidCollider
-          sensor
-          args={[RING_HALF, 1.4, RING_HALF]}
-          position={[0, RING_FLOOR + 1.4, 0]}
-          onIntersectionEnter={onEnter}
-          onIntersectionExit={onExit}
-        />
+        {[0, 1, 2, 3].map((i) => {
+          const a = (i * Math.PI) / 2
+          return (
+            <CuboidCollider
+              key={`b${i}`}
+              args={[BARRIER + 0.2, BARRIER_H / 2, 0.15]}
+              position={[Math.sin(a) * BARRIER, RING_FLOOR + BARRIER_H / 2, Math.cos(a) * BARRIER]}
+              rotation={[0, a, 0]}
+              collisionGroups={SEE_THROUGH}
+            />
+          )
+        })}
       </RigidBody>
     </group>
   )
