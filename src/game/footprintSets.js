@@ -1,15 +1,16 @@
 import { CanvasTexture, SRGBColorSpace } from 'three'
 
 import { tidy } from './format'
-import { getGun, gunTier, GUNS, MAX_GUN_TIER } from './guns'
+import { getGlove, gloveTier, GLOVES, MAX_GLOVE_TIER } from './gloves'
 
 /**
  * Footprints: a trail the player leaves behind, bought in the shop with Wins.
  *
- * Every gun has its own set, in its colours and shaped after its type, and you can
- * only buy a gun's set once you own the gun. The further up the ladder the gun is
- * (see gunTier), the fancier its prints - a starter leaves plain shoe prints, the
- * best guns leave glowing, sparkling, rippling ones. Each print is gone in a second.
+ * Every pair of gloves has its own set, in its colours and shaped after its design,
+ * and you can only buy a pair's set once you own the gloves. The further up the
+ * ladder the pair is (see gloveTier), the fancier its prints - the rookies leave
+ * plain shoe prints, the best pairs leave glowing, sparkling, rippling ones. Each
+ * print is gone in a second.
  *
  * The prints themselves are drawn by Footprints.jsx; Player.jsx calls
  * leaveFootprint() each time a foot lands.
@@ -18,21 +19,26 @@ import { getGun, gunTier, GUNS, MAX_GUN_TIER } from './guns'
 /** Seconds a print takes to fade away. */
 export const FOOTPRINT_S = 1
 
-/** What a gun's footprints cost, in Wins. Cheap next to the gun; a bit more for the stronger ones. */
-export const footprintCost = (gun) => tidy(Math.max(10, gun.ammo * 4))
+/** What a pair's footprints cost, in Wins. Cheap next to the gloves; a bit more for the stronger ones. */
+export const footprintCost = (glove) => tidy(Math.max(10, glove.power * 4))
 
-/** The shape of the print, by gun type. */
+/** The shape of the print, by glove design. */
 const SHAPE = {
-  pistol: 'shoe',
-  blaster: 'star',
-  rifle: 'boot',
-  shotgun: 'paw',
-  launcher: 'flame',
-  minigun: 'bolt',
+  classic: 'shoe',
+  pro: 'boot',
+  spiked: 'paw',
+  flame: 'flame',
+  crystal: 'star',
+  tech: 'bolt',
+  thunder: 'bolt',
+  galaxy: 'star',
+  royal: 'star',
+  dragon: 'paw',
+  divine: 'star',
 }
 
 /**
- * How a gun's footprints look, from its tier:
+ * How a pair's footprints look, from its tier:
  *
  *   scale     size of the print
  *   glow      0..1 strength of the soft light under it (0 = none)
@@ -41,12 +47,12 @@ const SHAPE = {
  *   shine     a white highlight round the print's edge
  *   stars     little stars drawn inside the print
  */
-export function footprintStyle(gun) {
-  const tier = gunTier(gun)
+export function footprintStyle(glove) {
+  const tier = gloveTier(glove)
   return {
     tier,
-    shape: SHAPE[gun.type] ?? 'shoe',
-    scale: 1 + (tier / MAX_GUN_TIER) * 0.35,
+    shape: SHAPE[glove.design] ?? 'shoe',
+    scale: 1 + (tier / MAX_GLOVE_TIER) * 0.35,
     glow: tier >= 3 ? Math.min(1, 0.35 + tier * 0.025) : 0,
     sparkles: tier >= 24 ? 9 : tier >= 16 ? 6 : tier >= 7 ? 3 : 0,
     ripple: tier >= 12,
@@ -63,10 +69,10 @@ const RARITIES = [
   { name: 'Legendary', colors: ['#ffd84a', '#f07800'] },
   { name: 'Mythic', colors: ['#ff6ad5', '#ff3b3b'] },
 ]
-export const footprintRarity = (gun) => RARITIES[Math.min(RARITIES.length - 1, Math.floor(gunTier(gun) / 6))]
+export const footprintRarity = (glove) => RARITIES[Math.min(RARITIES.length - 1, Math.floor(gloveTier(glove) / 6))]
 
 /** Every set in the shop, in ladder order. */
-export const FOOTPRINT_SETS = [...GUNS].sort((a, b) => gunTier(a) - gunTier(b))
+export const FOOTPRINT_SETS = [...GLOVES].sort((a, b) => gloveTier(a) - gloveTier(b))
 
 /** Traces the print's outline into `ctx`, filling a `s` x `s` square (toe up). */
 function tracePrint(ctx, shape, s) {
@@ -125,27 +131,27 @@ function drawStar(ctx, x, y, r) {
 const canvases = new Map()
 const textures = new Map()
 
-/** The print as a canvas: the gun's colours, decorated to its tier. Shared by the shop's preview. */
-export function footprintCanvas(gunId) {
-  let canvas = canvases.get(gunId)
+/** The print as a canvas: the gloves' colours, decorated to their tier. Shared by the shop's preview. */
+export function footprintCanvas(gloveId) {
+  let canvas = canvases.get(gloveId)
   if (canvas) return canvas
-  const gun = getGun(gunId)
-  const style = footprintStyle(gun)
+  const glove = getGlove(gloveId)
+  const style = footprintStyle(glove)
   const s = 128
   canvas = document.createElement('canvas')
   canvas.width = canvas.height = s
   const ctx = canvas.getContext('2d')
 
   const fill = ctx.createLinearGradient(0, 0, 0, s)
-  fill.addColorStop(0, gun.trim)
-  fill.addColorStop(1, gun.accent)
+  fill.addColorStop(0, glove.trim)
+  fill.addColorStop(1, glove.cuff)
 
   tracePrint(ctx, style.shape, s)
   ctx.fillStyle = fill
   ctx.fill()
   ctx.lineJoin = 'round'
   ctx.lineWidth = 7
-  ctx.strokeStyle = gun.body
+  ctx.strokeStyle = glove.main
   ctx.stroke()
   // Tread: grooves cut across a boot, and the gap between a shoe's sole and heel.
   if (style.shape === 'boot' || style.shape === 'shoe') {
@@ -174,23 +180,23 @@ export function footprintCanvas(gunId) {
     for (const [x, y, r] of [[0.42, 0.3, 9], [0.6, 0.5, 6], [0.44, 0.7, 7]]) drawStar(ctx, x * s, y * s, r)
     ctx.restore()
   }
-  canvases.set(gunId, canvas)
+  canvases.set(gloveId, canvas)
   return canvas
 }
 
-/** The print as a texture, cached per gun. */
-export function footprintTexture(gunId) {
-  let texture = textures.get(gunId)
+/** The print as a texture, cached per pair. */
+export function footprintTexture(gloveId) {
+  let texture = textures.get(gloveId)
   if (!texture) {
-    texture = new CanvasTexture(footprintCanvas(gunId))
+    texture = new CanvasTexture(footprintCanvas(gloveId))
     texture.colorSpace = SRGBColorSpace
-    textures.set(gunId, texture)
+    textures.set(gloveId, texture)
   }
   return texture
 }
 
-/** Whether `id` names a gun, and so a footprint set - another player's profile is not trusted. */
-export const isFootprintSet = (id) => typeof id === 'string' && GUNS.some((gun) => gun.id === id)
+/** Whether `id` names a pair of gloves, and so a footprint set - another player's profile is not trusted. */
+export const isFootprintSet = (id) => typeof id === 'string' && GLOVES.some((glove) => glove.id === id)
 
 /** Steps waiting to be drawn: `{ x, y, z, yaw, side }`. Drained by Footprints.jsx. */
 export const pendingSteps = []

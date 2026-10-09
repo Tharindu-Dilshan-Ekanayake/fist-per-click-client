@@ -7,7 +7,7 @@ import { AdditiveBlending, DoubleSide } from 'three'
 import { formatNumber } from '../format'
 import { useGame } from '../gameStore'
 import { getPass } from '../passes'
-import { HOLD_S, padAmmo, padUnlocked, padWins } from '../walls'
+import { HOLD_S, padStrength, padUnlocked, padWins } from '../walls'
 import { Label, Sparkle } from './Effects'
 import InteractPrompt, { HOLD_RING } from './InteractPrompt'
 import { beamTexture, radialGlowTexture, shade, studTexture } from './textures'
@@ -31,7 +31,7 @@ const BEAM_H = 3.2
  */
 export function WinPad({ number, pad, position, home = SPAWN }) {
   const key = `${number}:${pad.id}`
-  const needed = padAmmo(number, pad)
+  const needed = padStrength(number, pad)
   const gain = padWins(number, pad)
   const pass = pad.pass ? getPass(pad.pass) : null
   const passPrice = pass ? formatNumber(pass.cost) : ''
@@ -46,7 +46,7 @@ export function WinPad({ number, pad, position, home = SPAWN }) {
   const playerBody = useRef(null)
 
   // How brightly a *locked* pad burns. A VIP pad is for sale, not out of reach, so
-  // it keeps most of its glow to advertise itself; a pad that just needs more Ammo
+  // it keeps most of its glow to advertise itself; a pad that just needs more Strength
   // goes all but dark.
   const dim = pass ? 0.55 : 0.2
 
@@ -192,7 +192,7 @@ export function WinPad({ number, pad, position, home = SPAWN }) {
             ringRef={ring}
             action={unlocked ? 'Hold E' : 'Locked'}
             title={`+${formatNumber(gain)} Wins`}
-            detail={unlocked ? 'Cash in and go back to the lobby' : `Need ${formatNumber(needed)} Ammo`}
+            detail={unlocked ? 'Cash in and go back to the lobby' : `Need ${formatNumber(needed)} Strength`}
             tone={unlocked ? 'normal' : 'warn'}
           />
         ))}

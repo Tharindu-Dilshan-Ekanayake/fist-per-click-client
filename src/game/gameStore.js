@@ -1,11 +1,10 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-import { bossReward } from './boss'
 import { getEgg } from './eggs'
 import { formatBonus, formatNumber } from './format'
 import { footprintCost } from './footprintSets'
-import { DEFAULT_GUN, getGun } from './guns'
+import { DEFAULT_GLOVE, getGlove } from './gloves'
 import { getPass, passMultiplier } from './passes'
 import { getPet, MAX_EQUIPPED, PETS, petWinsMultiplier } from './pets'
 import {
@@ -22,7 +21,7 @@ import { playSound } from './sound'
 import { getTrainer, rebirthsShort, TRAINERS } from './trainers'
 import {
   isSpaceWall,
-  padAmmo,
+  padStrength,
   padUnlocked,
   padWins,
   stageWins,
@@ -31,19 +30,19 @@ import {
   wallStage,
 } from './walls'
 
-/** Ammo for one click. Kept a whole number so the totals stay tidy. */
-export const clickGain = (gun, trainer, multiplier = 1) =>
-  Math.max(1, Math.round(gun.ammo * (trainer?.multiplier ?? 1) * multiplier))
+/** Strength for one punch. Kept a whole number so the totals stay tidy. */
+export const clickGain = (glove, trainer, multiplier = 1) =>
+  Math.max(1, Math.round(glove.power * (trainer?.multiplier ?? 1) * multiplier))
 
 /**
  * Level times any running boost times every rebirth earned times the 2x Power pass:
- * everything that multiplies a click, bar the target you are standing at.
+ * everything that multiplies a punch, bar the bag you are standing at.
  *
  * Every field is read with a default so that a caller passing a partial slice - the
  * HUD passes only what it subscribes to - multiplies by one rather than by undefined.
  */
-export const powerMultiplier = ({ ammo = 0, boost = null, rebirths = 0, ownedPasses = [] }, now = Date.now()) =>
-  levelMultiplier(levelFor(ammo)) *
+export const powerMultiplier = ({ strength = 0, boost = null, rebirths = 0, ownedPasses = [] }, now = Date.now()) =>
+  levelMultiplier(levelFor(strength)) *
   (activeBoost(boost, now)?.multiplier ?? 1) *
   rebirthMultiplier(rebirths) *
   passMultiplier(ownedPasses, 'power2x')
@@ -67,12 +66,15 @@ export const AUTO_WINS_S = 10
  * signed in (see game/cloudSave.js) - and the defaults are a brand new player.
  */
 export const DEFAULT_PROGRESS = Object.freeze({
-  ammo: 0,
-  /** Rebirths completed. Every one is a permanent multiplier on every click. */
+  /** Strength: what every punch adds to, and what a wall takes as damage. */
+  strength: 0,
+  /** Rebirths completed. Every one is a permanent multiplier on every punch. */
   rebirths: 0,
   wins: 0,
-  owned: [DEFAULT_GUN],
-  equipped: DEFAULT_GUN,
+  /** Ids of the gloves bought (see gloves.js); the rookies are free. */
+  owned: [DEFAULT_GLOVE],
+  /** The pair being worn. */
+  equipped: DEFAULT_GLOVE,
   /** Ids of hatched eggs (one pet each — see pets.js). */
   ownedPets: [],
   /**
@@ -85,10 +87,6 @@ export const DEFAULT_PROGRESS = Object.freeze({
   bestWall: 0,
   /** Highest Space World wall ever broken, counted from 1 (0 = none). */
   spaceBest: 0,
-  /** Highest wall number ever reached in the Infinity Cave (0 = none). */
-  caveBest: 0,
-  /** The level of the next boss to fight; one higher after every win. */
-  bossLevel: 1,
   /** Running power boost: `{ multiplier, until }` (until in ms), or null. */
   boost: null,
   /** Whether the OP Auto Clicker has been bought. */
@@ -99,10 +97,14 @@ export const DEFAULT_PROGRESS = Object.freeze({
   ownedPasses: [],
   /** Whether Auto Wins is switched on (it only runs once the pass is owned). */
   autoWins: false,
-  /** Ids of the guns whose footprints have been bought in the shop (see footprintSets.js). */
+  /** Ids of the gloves whose footprints have been bought in the shop (see footprintSets.js). */
   ownedFootprints: [],
-  /** The footprints being left, by gun id, or null for none. */
+  /** The footprints being left, by glove id, or null for none. */
   footprints: null,
+  /** Fights won in the boxing rings (see world/BoxingRing.jsx). */
+  ringWins: 0,
+  /** Most fights won in a row without leaving the ring. */
+  ringStreak: 0,
 })
 
 /** The keys of DEFAULT_PROGRESS, which is the list of what gets saved. */
@@ -147,14 +149,18 @@ export const useGame = create(
       shopOpen: false,
       /** Whether the Controls panel is open. */
       controlsOpen: false,
+      /** Whether the Guide is open. It is, every time the game starts. */
+      guideOpen: true,
       /** Which pet's card the Pets panel is showing on the right, or null. */
       petsSelected: null,
 
-      /** Id of the target whose pad the player is standing on, or null. */
+      /** Id of the bag whose pad the player is standing on, or null. */
       activeTrainer: null,
-      /** Yaw the player turns to while training, so they face the target. */
+      /** Yaw the player turns to while training, so they face the bag. */
       trainYaw: Math.PI,
-      /** What the E key acts on: `{ kind: 'gun' | 'egg' | 'pad' | 'trainer', id }`, or null. */
+      /** `[x, z]` the player steps to while training, in reach of the bag; or null. */
+      trainSpot: null,
+      /** What the E key acts on: `{ kind: 'glove' | 'egg' | 'pad' | 'trainer', id }`, or null. */
       interact: null,
       /** `performance.now()` seconds when E started being held, or null. */
       holdingSince: null,
@@ -166,15 +172,15 @@ export const useGame = create(
       wallsResetAt: null,
       /** Which auto clicker is running: 'off' | 'normal' | 'op'. */
       autoClick: 'off',
-      /** Whether the player is inside the boss arena (see world/BossArena.jsx). */
-      inBossArena: false,
-      /** Player position `[x, y, z]` at the last shot, so a wall knows which side was hit. */
-      shotPos: null,
-      /** "+N Ammo" popups flying to the Ammo counter: `{ id, gain, x, y, dx, dy }`. */
+      /** Player position `[x, y, z]` at the last punch, so a wall knows which side was hit. */
+      punchPos: null,
+      /** "+N Strength" popups flying to the Strength counter: `{ id, gain, x, y, dx, dy }`. */
       popups: [],
-      /** `performance.now()` seconds of the last shot; drives the recoil and the hits. */
-      shotAt: -Infinity,
-      /** Ammo gained by the last shot, for the target's "+N" popup and boss damage. */
+      /** `performance.now()` seconds of the last punch; drives the swing and the hits. */
+      punchAt: -Infinity,
+      /** Punches thrown this session: which hand throws, and which punch it is (see avatarRig). */
+      punchCount: 0,
+      /** Strength gained by the last punch, for the bag's "+N" popup. */
       lastGain: 0,
       /** Latest toast: `{ text, tone: 'info'|'success'|'error', id }`. */
       message: null,
@@ -190,19 +196,20 @@ export const useGame = create(
       },
 
       /**
-       * One shot of the equipped gun: gain its Ammo, times the target, level, boost,
+       * One punch with the gloves on: gain their Strength, times the bag, level, boost,
        * rebirths and passes. `popup` (`{ x, y, dx, dy }` in screen pixels) sends a
-       * "+N" flying from (x, y) by (dx, dy), to the Ammo counter. `at` is the
+       * "+N" flying from (x, y) by (dx, dy), to the Strength counter. `at` is the
        * player's position, if known.
        */
-      shoot: (popup, at) => {
+      punch: (popup, at) => {
         const state = get()
-        const gain = clickGain(getGun(state.equipped), getTrainer(state.activeTrainer), powerMultiplier(state))
+        const gain = clickGain(getGlove(state.equipped), getTrainer(state.activeTrainer), powerMultiplier(state))
         const next = {
-          ammo: state.ammo + gain,
+          strength: state.strength + gain,
           lastGain: gain,
-          shotAt: performance.now() / 1000,
-          shotPos: at ?? null,
+          punchAt: performance.now() / 1000,
+          punchCount: state.punchCount + 1,
+          punchPos: at ?? null,
         }
         if (popup) {
           const id = ++popupId
@@ -214,20 +221,20 @@ export const useGame = create(
       },
 
       /**
-       * Stepping onto a target's pad: train if it's unlocked. A locked one only offers
+       * Stepping onto a bag's pad: train if it's unlocked. A locked one only offers
        * itself with an E prompt (see unlockTrainer); nothing is spent just by
-       * walking over it. `faceYaw` is the yaw that points the player at the target.
+       * walking over it. `faceYaw` is the yaw that points the player at the bag.
        */
-      enterTrainer: (id, faceYaw = Math.PI) => {
+      enterTrainer: (id, faceYaw = Math.PI, spot = null) => {
         if (!getTrainer(id)) return
         if (!get().unlockedTrainers.includes(id)) {
-          set({ interact: { kind: 'trainer', id }, holdingSince: null, trainYaw: faceYaw })
+          set({ interact: { kind: 'trainer', id }, holdingSince: null, trainYaw: faceYaw, trainSpot: spot })
           return
         }
-        set({ activeTrainer: id, trainYaw: faceYaw })
+        set({ activeTrainer: id, trainYaw: faceYaw, trainSpot: spot })
       },
 
-      /** E on a locked target's pad: buy it if affordable, then start training on it. */
+      /** E on a locked bag's pad: buy it if affordable, then start training on it. */
       unlockTrainer: (id) => {
         const { unlockedTrainers, wins, rebirths, interact, notify } = get()
         const trainer = getTrainer(id)
@@ -250,7 +257,7 @@ export const useGame = create(
           activeTrainer: id,
           interact: interact?.kind === 'trainer' && interact.id === id ? null : interact,
         })
-        notify(`Unlocked the ${trainer.name} - ${trainer.multiplier}x Ammo!`, 'success')
+        notify(`Unlocked the ${trainer.name} - x${trainer.multiplier} Strength!`, 'success')
         playSound('unlock')
       },
 
@@ -259,7 +266,7 @@ export const useGame = create(
         get().clearInteract('trainer', id)
       },
 
-      /** A gun, egg, Win pad or locked target came into E range. */
+      /** A glove pad, egg, Win pad or locked bag came into E range. */
       setInteract: (kind, id) => set({ interact: { kind, id }, holdingSince: null }),
       /** It went out of range; ignored if something else has taken over since. */
       clearInteract: (kind, id) => {
@@ -269,7 +276,7 @@ export const useGame = create(
       /** E pressed (or the prompt clicked): act on whatever is in range. */
       interactNow: () => {
         const target = get().interact
-        if (target?.kind === 'gun') get().pickGun(target.id)
+        if (target?.kind === 'glove') get().pickGlove(target.id)
         else if (target?.kind === 'egg') get().hatchEgg(target.id)
         else if (target?.kind === 'trainer') get().unlockTrainer(target.id)
       },
@@ -384,81 +391,84 @@ export const useGame = create(
 
       toggleShop: (open) => set((s) => ({ shopOpen: open ?? !s.shopOpen })),
 
+      /** Open or close the Guide (its button in the left rail, G, and Escape). */
+      toggleGuide: (open) => set((s) => ({ guideOpen: open ?? !s.guideOpen })),
+
       /** Open or close the Controls panel (the HUD's Controls button, and Escape). */
       toggleControlsPanel: (open) => set((s) => ({ controlsOpen: open ?? !s.controlsOpen })),
 
       /**
-       * Spend all your Ammo for a permanent multiplier on every future click.
+       * Spend all your Strength for a permanent multiplier on every future punch.
        *
-       * Only `ammo` is given up. Wins, guns, pets, targets, boosts and passes are
+       * Only `strength` is given up. Wins, gloves, pets, bags, boosts and passes are
        * all left exactly as they were - a button that took back
        * something the player had paid for would be a trap, and this one is meant to
        * be pressed.
        *
        * Guarded rather than trusted: the panel disables the button when it cannot be
        * afforded, but the check lives here too, so no path into this - a stale panel,
-       * a double click, a future auto-rebirth - can zero someone's Ammo for nothing.
+       * a double click, a future auto-rebirth - can zero someone's Strength for nothing.
        */
       rebirth: () => {
-        const { ammo, rebirths, notify } = get()
-        if (!canRebirth(ammo, rebirths)) return
+        const { strength, rebirths, notify } = get()
+        if (!canRebirth(strength, rebirths)) return
         const next = rebirths + 1
-        set({ ammo: 0, rebirths: next, rebirthOpen: false })
+        set({ strength: 0, rebirths: next, rebirthOpen: false })
         playSound('unlock')
-        notify(`Rebirth ${next}! Every click is now x${rebirthMultiplier(next)} Power`, 'success')
+        notify(`Rebirth ${next}! Every punch is now x${rebirthMultiplier(next)} Power`, 'success')
       },
 
       /**
-       * E at a gun pad: equip it if owned, otherwise try to buy it with Wins.
+       * E at a glove pad: put them on if owned, otherwise try to buy them with Wins.
        */
-      pickGun: (id) => {
+      pickGlove: (id) => {
         const { owned, equipped, wins, notify } = get()
-        const gun = getGun(id)
+        const glove = getGlove(id)
         if (equipped === id) {
-          notify(`${gun.name} is already equipped`)
+          notify(`${glove.name} are already on`)
           return
         }
         if (owned.includes(id)) {
           set({ equipped: id })
-          notify(`Equipped ${gun.name}`)
+          notify(`Put on the ${glove.name}`)
           playSound('equip')
           return
         }
-        if (wins < gun.cost) {
-          notify(`Need ${formatNumber(gun.cost - wins)} more Wins for the ${gun.name}`, 'error')
+        if (wins < glove.cost) {
+          notify(`Need ${formatNumber(glove.cost - wins)} more Wins for the ${glove.name}`, 'error')
           return
         }
-        set({ wins: wins - gun.cost, owned: [...owned, id], equipped: id })
-        notify(`Bought the ${gun.name}! +${formatNumber(gun.ammo)} Ammo per click`, 'success')
+        set({ wins: wins - glove.cost, owned: [...owned, id], equipped: id })
+        notify(`Bought the ${glove.name}! +${formatNumber(glove.power)} Strength per punch`, 'success')
         playSound('unlock')
       },
 
       /**
        * A footprint set's button in the shop: buy it if it isn't owned (you need the
-       * gun first), wear it if it is, take it off if it's already on.
+       * gloves first), wear it if it is, take it off if it's already on.
        */
       pickFootprints: (id) => {
         const { owned, ownedFootprints, footprints, wins, notify } = get()
-        const gun = getGun(id)
-        if (gun.id !== id) return
+        const glove = getGlove(id)
+        if (glove.id !== id) return
         if (ownedFootprints.includes(id)) {
           const on = footprints !== id
           set({ footprints: on ? id : null })
-          notify(on ? `Now leaving ${gun.name} footprints` : 'Footprints off')
+          notify(on ? `Now leaving ${glove.name} footprints` : 'Footprints off')
           playSound(on ? 'equip' : 'click')
           return
         }
         if (!owned.includes(id)) {
-          notify(`Get the ${gun.name} first to unlock its footprints`, 'error')
+          notify(`Get the ${glove.name} first to unlock their footprints`, 'error')
           return
         }
-        const cost = footprintCost(gun)
+        const cost = footprintCost(glove)
         if (wins < cost) {
-          notify(`Need ${formatNumber(cost - wins)} more Wins for the ${gun.name} footprints`, 'error')
+          notify(`Need ${formatNumber(cost - wins)} more Wins for the ${glove.name} footprints`, 'error')
           return
         }
         set({ wins: wins - cost, ownedFootprints: [...ownedFootprints, id], footprints: id })
-        notify(`Bought the ${gun.name} footprints!`, 'success')
+        notify(`Bought the ${glove.name} footprints!`, 'success')
         playSound('unlock')
       },
 
@@ -505,17 +515,6 @@ export const useGame = create(
       resetWalls: () => set({ brokenWalls: {}, wallsResetAt: null }),
 
       /**
-       * An Infinity Cave wall's health hit zero (see InfinityWall): add its Wins
-       * straight away and remember how deep we've gone. No toast — these come fast,
-       * and the wall's own "+N" popup already says it.
-       */
-      breakCaveWall: (number, gain) =>
-        set((state) => ({
-          wins: state.wins + Math.round(gain * winsMultiplier(state)),
-          caveBest: Math.max(state.caveBest, number),
-        })),
-
-      /**
        * Held E long enough on a Win pad: pay out. Returns the Wins gained, or 0 if
        * the pad is shut; the pad then sends the player home.
        */
@@ -524,7 +523,7 @@ export const useGame = create(
         const { wins, notify } = state
         if (!padUnlocked(number, pad, state)) {
           if (pad.pass) notify(`${getPass(pad.pass).name} needed for this pad`, 'error')
-          else notify(`Need ${formatNumber(padAmmo(number, pad))} Ammo for this Win pad`, 'error')
+          else notify(`Need ${formatNumber(padStrength(number, pad))} Strength for this Win pad`, 'error')
           return 0
         }
         const bonus = winsMultiplier(state)
@@ -538,19 +537,26 @@ export const useGame = create(
         return gain
       },
 
-      /** Walked into or out of the boss arena. */
-      setInBossArena: (inside) => {
-        if (get().inBossArena !== inside) set({ inBossArena: inside })
+      /**
+       * Won a fight in one of the boxing rings: the Wins the server worked out from
+       * the loser's Strength (see the server's rings.js), with every Wins multiplier
+       * on top, and one more on the streak.
+       */
+      winRingFight: (base, opponent) => {
+        const state = get()
+        const bonus = winsMultiplier(state)
+        const gain = Math.max(1, Math.round(base * bonus))
+        const streak = state.ringStreak + 1
+        set({ wins: state.wins + gain, ringWins: state.ringWins + 1, ringStreak: streak })
+        const note = streak > 1 ? ` - ${streak} in a row!` : ''
+        state.notify(`K.O.! You beat ${opponent}! +${formatNumber(gain)} Wins${note}`, 'success')
+        playSound('win')
+        return gain
       },
 
-      /** The boss's health hit zero (see world/Boss.jsx): pay out and line up the next. */
-      defeatBoss: (level) => {
-        const state = get()
-        if (level !== state.bossLevel) return 0
-        const gain = Math.round(bossReward(level) * winsMultiplier(state))
-        set({ wins: state.wins + gain, bossLevel: level + 1 })
-        state.notify(`Boss ${level} defeated! +${formatNumber(gain)} Wins`, 'success')
-        return gain
+      /** Knocked out, or walked out of the ring: the streak is over. */
+      endRingStreak: () => {
+        if (get().ringStreak !== 0) set({ ringStreak: 0 })
       },
 
       /** A power boost button: buy it, or add time if the same one is running. */
@@ -662,7 +668,7 @@ export const useGame = create(
         }),
     }),
     {
-      name: 'apc-progress',
+      name: 'fpc-progress',
       version: 1,
       partialize: (state) => ({ ...pickProgress(state), ownerId: state.ownerId, syncedRev: state.syncedRev }),
     },

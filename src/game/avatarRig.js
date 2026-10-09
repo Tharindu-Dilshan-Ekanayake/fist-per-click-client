@@ -105,6 +105,8 @@ export function collectRig(root) {
       entry.axisX = new Vector3(1, 0, 0).applyQuaternion(relInv).normalize()
       /** Local axis to rotate about for lateral sway. */
       entry.axisZ = new Vector3(0, 0, 1).applyQuaternion(relInv).normalize()
+      /** Local axis to rotate about for a twist (turning the torso into a punch). */
+      entry.axisY = new Vector3(0, 1, 0).applyQuaternion(relInv).normalize()
     }
 
     rig.hatBone = skeleton.bones.find((b) => b.name === HAT_BONE) || null
@@ -228,20 +230,22 @@ export function attachAccessory(rig, kind, object) {
   return object
 }
 
-/** Forearm bone that held items ride on. */
-const HAND_BONE = 'ArmR2'
-/** The base body's right-arm mesh (`default_arm_R`), used to find where the hand is. */
-const RIGHT_ARM_MESH = /arm_r$/i
+/** Forearm bones that the gloves ride on, by hand. */
+const HAND_BONES = { right: 'ArmR2', left: 'ArmL2' }
+/** The base body's arm meshes (`default_arm_R` / `default_arm_L`), used to find the hands. */
+const ARM_MESHES = { right: /arm_r$/i, left: /arm_l$/i }
 
 /**
- * Adds an empty holder to the right forearm bone for a held item (the gun).
- * Call `placeHandHolder` once the body parts are applied to move it into the palm.
+ * Adds an empty holder to a forearm bone for a held item (a glove). `hand` is
+ * 'right' or 'left'. Call `placeHandHolder` once the body parts are applied to move
+ * it into the palm.
  */
-export function attachHandHolder(rig) {
-  const bone = rig.bones[HAND_BONE]?.bone
+export function attachHandHolder(rig, hand = 'right') {
+  const bone = rig.bones[HAND_BONES[hand]]?.bone
   if (!bone) return null
   const holder = new Object3D()
-  holder.name = 'HandHolder'
+  holder.name = `HandHolder-${hand}`
+  holder.userData.hand = hand
   bone.add(holder)
   return holder
 }
@@ -254,7 +258,7 @@ const _size = new Vector3()
 const _center = new Vector3()
 
 /**
- * Moves the hand holder to the bottom of the right arm, oriented to the character
+ * Moves a hand holder to the bottom of its arm, oriented to the character
  * (so +Z is forward and +Y up while the arm hangs at rest).
  *
  * Measured in the rest pose, since bone axes aren't character-aligned (see
@@ -263,7 +267,8 @@ const _center = new Vector3()
  */
 export function placeHandHolder(rig, holder) {
   const bone = holder.parent
-  const arm = rig.skinnedMeshes.find((m) => RIGHT_ARM_MESH.test(m.name || ''))
+  const pattern = ARM_MESHES[holder.userData.hand ?? 'right']
+  const arm = rig.skinnedMeshes.find((m) => pattern.test(m.name || ''))
   if (!bone || !arm || !rig.skeleton) return
 
   const bones = rig.skeleton.bones
@@ -392,44 +397,161 @@ const swing = (rig, name, angle) => rotateBone(rig, name, 'axisX', angle)
 /** Sway a limb out to the side. */
 const sway = (rig, name, angle) => rotateBone(rig, name, 'axisZ', angle)
 
+/** Turn a bone about the character's vertical axis. */
+const twist = (rig, name, angle) => rotateBone(rig, name, 'axisY', angle)
+
+/**
+ * How long one punch takes, start to finish, in seconds. An OP auto clicker throws
+ * ten a second, so the two hands take turns and each has two tenths to get back.
+ */
+export const PUNCH_S = 0.3
+
+/** The punches each hand throws in turn. */
+export const PUNCH_STYLES = ['jab', 'hook', 'uppercut']
+
+/**
+ * Which hand throws punch number `n` (1-based) and what kind of punch it is: right
+ * then left, two jabs, two hooks, two uppercuts, round again.
+ */
+export function punchFor(n) {
+  const right = n % 2 === 1
+  const style = PUNCH_STYLES[Math.floor((n - 1) / 2) % PUNCH_STYLES.length]
+  return { right, style }
+}
+
 /**
  * Poses the rig for the current motion state.
  *
  * @param {object} rig from `collectRig`
- * @param {{ time: number, speed: number, grounded: boolean, maxSpeed: number, shot?: number }} motion
+ * @param {{ time: number, speed: number, grounded: boolean, maxSpeed: number,
+ *           punchR?: number, punchL?: number, styleR?: string, styleL?: string,
+ *           guard?: number, hurt?: number, ko?: number, cheer?: number }} motion
  *   `speed` is horizontal speed in world units/sec; `maxSpeed` is what counts as a
  *   full-amplitude run, so the cycle scales smoothly from a walk to a sprint.
- *   `shot` is recoil progress: 0..1 while a shot's kick plays, anything else when idle.
+ *   `punchR` / `punchL` are each hand's punch progress: 0..1 while a punch plays,
+ *   anything else when that hand is resting. `guard` 0..1 holds the gloves up.
+ *   `hurt` 0..1 is a flinch from taking a hit, `ko` 0..1 a fall to the canvas, and
+ *   `cheer` 0..1 both gloves thrown up in victory.
  */
 export function animateRig(rig, motion) {
   if (!rig?.skeleton || !motion) return
-  poseLocomotion(rig, motion)
-  poseGun(rig, motion.shot)
+  rig.root.rotation.x = 0
+  const ratio = poseLocomotion(rig, motion)
+  poseArms(rig, motion, ratio)
+  poseReactions(rig, motion)
+}
+
+const clamp01 = (v) => Math.min(1, Math.max(0, v))
+const smooth = (v) => v * v * (3 - 2 * v)
+const easeOut = (v) => 1 - (1 - v) ** 3
+
+/**
+ * How far into its strike a punch is, from its progress: a quick pull back, a snap
+ * out to full reach, a beat held there, then back to guard. Below zero is the pull
+ * back.
+ */
+function strike(p) {
+  if (!(p >= 0 && p < 1)) return 0
+  if (p < 0.1) return -0.3 * smooth(p / 0.1)
+  if (p < 0.32) return -0.3 + 1.3 * easeOut((p - 0.1) / 0.22)
+  if (p < 0.45) return 1
+  return 1 - smooth((p - 0.45) / 0.55)
 }
 
 /**
- * Gun arm held straight out in front, the way the reference game's characters
- * carry theirs. PlayerAvatar tilts the gun by the opposite of this, so the barrel
- * comes out level. Negative raises the arm up and forward.
+ * The guard and where each kind of punch reaches to, as [upper-arm swing, upper-arm
+ * sway, forearm swing]. Swings are about the character's side-to-side axis (negative
+ * raises the arm forward); sways are about its forward axis, given for the right arm
+ * (the left mirrors them) with positive tucking the elbow in.
  */
-export const AIM_ANGLE = -1.4
-/** How far the arm kicks up on a shot. */
-const RECOIL_ANGLE = -0.38
+const GUARD = [-0.55, 0.22, -1.95]
+const RUN_GUARD = [-0.3, 0.12, -1.7]
+const REACH = {
+  jab: [-1.55, -0.18, -0.12],
+  hook: [-1.25, 0.95, -1.35],
+  uppercut: [-1.75, -0.12, -1.55],
+}
+/** How far the torso turns into each punch, and leans into it. */
+const BODY = {
+  jab: { twist: 0.42, lean: -0.12 },
+  hook: { twist: 0.62, lean: -0.06 },
+  uppercut: { twist: 0.3, lean: 0.12 },
+}
 
 /**
- * Holds the gun out, and kicks it up and back down while a shot plays: up fast in
- * the first fifth, then settling back over the rest. The right arm takes no part in
- * the walk cycle (see poseLocomotion) - a gun swinging at your side as you run would
- * point at the floor every other step.
+ * Both arms: up in a guard while standing (and lower, pumping, while running), and
+ * each hand's punch layered on top.
  */
-function poseGun(rig, progress = Infinity) {
-  let angle = AIM_ANGLE
-  if (progress >= 0 && progress < 1) {
-    angle += RECOIL_ANGLE * (progress < 0.2 ? progress / 0.2 : (1 - (progress - 0.2) / 0.8) ** 2)
+function poseArms(rig, motion, ratio) {
+  const guard = motion.guard ?? 1
+  const cycle = Math.sin(motion.phase ?? rig.cyclePhase ?? 0)
+  const pump = ratio * (1 - guard * 0.6)
+  let bodyTwist = 0
+  let bodyLean = 0
+
+  for (const [hand, side] of [['R', 1], ['L', -1]]) {
+    const p = hand === 'R' ? motion.punchR : motion.punchL
+    const style = (hand === 'R' ? motion.styleR : motion.styleL) ?? 'jab'
+    const s = strike(p)
+    const reach = REACH[style] ?? REACH.jab
+    // The resting arm: the guard, sinking towards a running carry the faster you go.
+    const rest = GUARD.map((g, i) => g + (RUN_GUARD[i] - g) * (1 - guard) * ratio)
+    // Running pumps the arms in opposition to the legs.
+    const swingRun = (hand === 'R' ? cycle : -cycle) * 0.55 * pump
+    const k = Math.max(0, s)
+    const pull = Math.min(0, s)
+    const upper = rest[0] + (reach[0] - rest[0]) * k + swingRun - pull * 0.35
+    const sideways = rest[1] + (reach[1] - rest[1]) * k
+    const fore = rest[2] + (reach[2] - rest[2]) * k + pull * 0.25
+    swing(rig, `Arm${hand}1`, upper)
+    sway(rig, `Arm${hand}1`, sideways * side)
+    swing(rig, `Arm${hand}2`, fore)
+
+    if (s !== 0) {
+      const body = BODY[style] ?? BODY.jab
+      bodyTwist += body.twist * s * side
+      bodyLean += body.lean * k
+    }
   }
-  swing(rig, 'ArmR1', angle)
+  // Turn the shoulders into the punch, and lean with it.
+  twist(rig, 'Spine1', bodyTwist * 0.6)
+  twist(rig, 'Spine2', bodyTwist * 0.4)
+  swing(rig, 'Spine1', bodyLean)
 }
 
+/** Taking a hit, going down, and the victory cheer. */
+function poseReactions(rig, motion) {
+  const hurt = motion.hurt
+  if (hurt >= 0 && hurt < 1) {
+    // Rocked back, then recovering.
+    const k = Math.sin(hurt * Math.PI) * (1 - hurt * 0.4)
+    swing(rig, 'Spine1', 0.32 * k)
+    swing(rig, 'Spine2', 0.18 * k)
+  }
+  const ko = motion.ko
+  if (ko > 0) {
+    // Topples backwards from the feet and lies there, arms flung out.
+    const fall = easeOut(clamp01(ko * 1.6))
+    rig.root.rotation.x = -1.45 * fall
+    rig.root.position.y = rig.rootRestY + 0.05 * fall
+    swing(rig, 'ArmR1', -1.2 * fall)
+    swing(rig, 'ArmL1', -1.2 * fall)
+    sway(rig, 'ArmR1', -0.9 * fall)
+    sway(rig, 'ArmL1', 0.9 * fall)
+  }
+  const cheer = motion.cheer
+  if (cheer > 0 && !(ko > 0)) {
+    // Both gloves straight up, pumping.
+    const k = smooth(clamp01(cheer * 4))
+    const pumpUp = Math.abs(Math.sin(cheer * Math.PI * 6)) * 0.35
+    swing(rig, 'ArmR1', (-1.3 - pumpUp) * k)
+    swing(rig, 'ArmL1', (-1.3 - pumpUp) * k)
+    swing(rig, 'ArmR2', 0.9 * k)
+    swing(rig, 'ArmL2', 0.9 * k)
+  }
+}
+
+/** Legs, spine and the bob. Returns how close to a full run the motion is, 0..1. */
 function poseLocomotion(rig, motion) {
   const { time = 0, speed = 0, grounded = true, maxSpeed = 6 } = motion
   const ratio = Math.min(speed / Math.max(maxSpeed, 0.001), 1)
@@ -445,24 +567,28 @@ function poseLocomotion(rig, motion) {
 
   rig.root.position.y = rig.rootRestY
 
-  // --- Airborne: tuck the legs, throw the arms up ---------------------------
+  // --- Airborne: tuck the legs ------------------------------------------------
   if (!grounded) {
     swing(rig, 'LegL1', -0.55)
     swing(rig, 'LegL2', 0.75)
     swing(rig, 'LegR1', 0.3)
     swing(rig, 'LegR2', 0.2)
-    swing(rig, 'ArmL1', -2.1)
     swing(rig, 'Spine1', -0.1)
-    return
+    return 0.4
   }
 
-  // --- Standing still: a slow breathing sway --------------------------------
+  // --- Standing still: a boxer's bounce on the balls of the feet --------------
   if (ratio < 0.04) {
-    const idle = Math.sin(time * 1.6)
-    sway(rig, 'ArmL1', -0.07 - idle * 0.03)
-    swing(rig, 'Spine1', idle * 0.02)
-    rig.root.position.y = rig.rootRestY + idle * 0.03
-    return
+    const bounce = Math.sin(time * 6)
+    const breathe = Math.sin(time * 1.6)
+    // Fighting stance: one foot a little forward, knees soft.
+    swing(rig, 'LegL1', -0.16)
+    swing(rig, 'LegL2', 0.22 + bounce * 0.04)
+    swing(rig, 'LegR1', 0.14)
+    swing(rig, 'LegR2', 0.18 + bounce * 0.04)
+    swing(rig, 'Spine1', -0.06 + breathe * 0.015)
+    rig.root.position.y = rig.rootRestY - 0.02 + Math.abs(bounce) * 0.035
+    return 0
   }
 
   // --- Walk / run cycle -----------------------------------------------------
@@ -470,7 +596,6 @@ function poseLocomotion(rig, motion) {
   const phase = motion.phase ?? rig.cyclePhase
   const cycle = Math.sin(phase)
   const legAmp = 0.85 * ratio
-  const armAmp = 0.7 * ratio
 
   // Legs swing in opposition; knees fold on the backswing only.
   swing(rig, 'LegL1', cycle * legAmp)
@@ -478,11 +603,8 @@ function poseLocomotion(rig, motion) {
   swing(rig, 'LegL2', Math.max(0, -cycle) * 1.1 * ratio)
   swing(rig, 'LegR2', Math.max(0, cycle) * 1.1 * ratio)
 
-  // The free arm counter-swings against the legs; the gun arm stays on aim.
-  swing(rig, 'ArmL1', -cycle * armAmp)
-  swing(rig, 'ArmL2', Math.max(0, cycle) * 0.5 * ratio)
-
   // Lean into the run, and bob once per step (twice per full cycle).
   swing(rig, 'Spine1', -0.14 * ratio)
   rig.root.position.y = rig.rootRestY + Math.abs(Math.cos(phase)) * 0.18 * ratio
+  return ratio
 }

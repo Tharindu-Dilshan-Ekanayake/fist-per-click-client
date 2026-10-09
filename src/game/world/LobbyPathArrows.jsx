@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Shape, ShapeGeometry } from 'three'
 
-const POSITIONS = [21, 13, 5, -3, -11, -19, -27, -32]
+const POSITIONS = [14, 6, -2, -10, -18, -26, -31.5]
 
 /** Open chevron arrowhead pointing down the avenue toward the Stage 01 gate. */
 function makeArrowGeometry() {
@@ -23,7 +23,7 @@ export function LobbyPathArrows() {
   return (
     <group>
       {POSITIONS.map((z, index) => (
-        <group key={z} position={[0, 0.05, z]} rotation={[-Math.PI / 2, 0, 0]}>
+        <group key={z} position={[0, 0.115, z]} rotation={[-Math.PI / 2, 0, 0]}>
           {[0, -0.86].map((offset, chevron) => (
             <group key={offset} position={[0, offset, 0]}>
               <mesh position={[0, 0, 0.007]} scale={[1.4, 1.35, 1]} geometry={arrow}>

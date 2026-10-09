@@ -15,38 +15,39 @@ const FADE_MS = 600
 const TIP_MS = 3200
 
 const TIPS = [
-  'Break 10 walls to reach the next stage!',
+  'Smash 10 walls to reach the next stage!',
   'Stages pay 1, 5, 10, 50 Wins... and it only gets bigger.',
   'Hold E on a Win pad to cash in your Wins.',
-  'Stand on a target\u2019s pad and you shoot it automatically.',
-  'Better guns give more Ammo per click.',
-  'Rebirth 1 opens the Boss Arena. Rebirth 3 opens Space World!',
-  'Log in and your Ammo, Wins and Rebirths are saved for next time.',
+  'Step onto a punching bag\u2019s pad and you train on it automatically.',
+  'Better gloves give more Strength per punch.',
+  'Fight other players in the boxing rings behind the training zone!',
+  'Rebirth 3 times to open the portal to Space World!',
+  'Log in and your Strength, Wins and Rebirths are saved for next time.',
 ]
 
-/** A blocky pistol, recoiling on a loop. */
-function Gun() {
+/** A red boxing glove, throwing a punch on a loop. */
+function Glove() {
   return (
-    <svg viewBox="0 0 100 100" aria-hidden="true" className="loading-swing h-24 w-24 drop-shadow-[0_5px_0_rgba(0,0,0,0.8)]">
+    <svg viewBox="0 0 100 100" aria-hidden="true" className="loading-swing h-28 w-28 drop-shadow-[0_5px_0_rgba(0,0,0,0.8)]">
       <defs>
-        <linearGradient id="loading-gun" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#c07bff" />
-          <stop offset="1" stopColor="#6a2fd0" />
+        <linearGradient id="loading-glove" x1="0.1" y1="0" x2="0.9" y2="0.9">
+          <stop offset="0" stopColor="#ff9a88" />
+          <stop offset="0.5" stopColor="#f0302a" />
+          <stop offset="1" stopColor="#b0140f" />
         </linearGradient>
       </defs>
-      <g stroke="#1b1b25" strokeWidth="5" strokeLinejoin="round">
-        <rect x="10" y="30" width="72" height="22" rx="3" fill="url(#loading-gun)" />
-        <rect x="80" y="34" width="12" height="12" fill="#ffc93c" />
-        <path d="M22 50 L44 50 L40 86 L18 86 Z" fill="#3a3f4a" />
-        <path d="M44 50 Q52 66 44 66" fill="none" />
-        <rect x="16" y="36" width="58" height="5" fill="#ffe680" stroke="none" />
+      <g stroke="#1b1b25" strokeWidth="5" strokeLinejoin="round" transform="rotate(90 50 50)">
+        <rect x="28" y="66" width="46" height="28" rx="6" fill="#f4f4f4" />
+        <path d="M30 70 C16 58 14 26 34 12 C50 2 78 4 86 22 C95 40 90 62 74 70 Z" fill="url(#loading-glove)" />
+        <ellipse cx="31" cy="47" rx="12" ry="17" transform="rotate(-14 31 47)" fill="url(#loading-glove)" />
+        <rect x="31.5" y="74" width="39" height="8" fill="#ffd23f" stroke="none" />
       </g>
     </svg>
   )
 }
 
 /**
- * Full-screen loading screen over the game: title, a recoiling gun, a progress bar
+ * Full-screen loading screen over the game: title, a punching glove, a progress bar
  * and tips. Fades out once the map has been drawn and the avatar is ready (or after
  * AVATAR_TIMEOUT_MS, with a stand-in body in its place).
  */
@@ -111,12 +112,12 @@ export function LoadingScreen() {
         opacity: leaving ? 0 : 1,
         transitionDuration: `${FADE_MS}ms`,
         pointerEvents: leaving ? 'none' : 'auto',
-        background: 'radial-gradient(circle at 50% 35%, #5b8cff 0%, #3b2a8f 55%, #170f3a 100%)',
+        background: 'radial-gradient(circle at 50% 35%, #ff6a5a 0%, #8f1f3a 52%, #2a0d1f 100%)',
       }}
     >
-      <Gun />
+      <Glove />
       <div style={OUTLINE} className="leading-none">
-        <div className="text-6xl text-yellow-300 sm:text-7xl">+1 AMMO</div>
+        <div className="text-6xl text-yellow-300 sm:text-7xl">+1 FIST</div>
         <div className="mt-2 text-4xl text-white sm:text-5xl">PER CLICK</div>
       </div>
 

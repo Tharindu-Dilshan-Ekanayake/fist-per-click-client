@@ -7,14 +7,14 @@ const REFRESH_MS = 60 * 1000
 
 /**
  * The lobby's leaderboards, as the server last sent them (GET /api/leaderboard):
- * the top ten signed-in players by Wins, by Rebirths and by bosses beaten, each a
+ * the top ten signed-in players by Wins, by Rebirths and by fights won, each a
  * list of `{ username, value }`. Empty until the first answer, and left as they
  * were if a refresh fails - a stale board beats a blank one.
  */
 export const useLeaderboard = create(() => ({
   wins: [],
   rebirths: [],
-  bosses: [],
+  fights: [],
   loaded: false,
 }))
 
@@ -26,7 +26,7 @@ async function refresh() {
     useLeaderboard.setState({
       wins: body.wins ?? [],
       rebirths: body.rebirths ?? [],
-      bosses: body.bosses ?? [],
+      fights: body.fights ?? [],
       loaded: true,
     })
   } catch {

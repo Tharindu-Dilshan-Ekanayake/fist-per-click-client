@@ -1,59 +1,83 @@
-# +1 Ammo Per Click — client
+# +1 Fist Per Click — client
 
-A blocky clicker shooter: every click fires your gun for Ammo, Ammo breaks the
-stage walls, the Win pads at the end of each stage pay Wins (1, 5, 10, 50, 250…),
-and Wins buy better guns, targets and pets. Rebirth for a permanent multiplier;
-Rebirth 1 opens the **Boss Arena**, Rebirth 3 opens **Space World**.
+A blocky boxing clicker: every click is a punch that adds Strength, Strength smashes
+the stage walls (they crack as you hit them and burst into blocks when they go),
+the Win pads at the end of each stage pay Wins (1, 5, 10, 50, 250…), and Wins buy
+bigger boxing gloves, punching bags to train on and pets. Rebirth for a permanent
+multiplier; Rebirth 3 opens **Space World**.
 
-React + three.js (react-three-fiber, Rapier physics), with the Bloxity SDK for
-login and avatars. Everything in the game is bought with Wins - there is no
-real-money currency.
+Behind the training zone are four **boxing rings**: two players step in, the ropes
+go solid, and they fight — the stronger fist does more damage, and whoever is
+knocked out lands back in the lobby while the winner collects Wins. Everyone in the
+lobby can watch: each ring has a scoreboard over it.
+
+React + three.js (react-three-fiber, Rapier physics), with the Bloxity SDK for login
+and avatars, and a Colyseus game server for the lobby and the rings. Everything in
+the game is bought with Wins — there is no real-money currency.
 
 ## Running it locally
 
 ```bash
 npm install
-cp .env.example .env     # set VITE_GAME_SLUG
+cp .env.example .env     # VITE_GAME_SLUG is already 1-fist-per-click
 npm run dev
 ```
 
-Run the server too (`../ammo-per-click-server`, `npm run dev`). With
+Run the server too (`../fist-per-click-server`, `npm run dev`). With
 `VITE_SERVER_URL=http://localhost:3000` in `.env`, a localhost page talks to it
-directly — lobbies and cloud saves both.
+directly — lobbies, rings and cloud saves.
+
+In development, `?lab=gloves` and `?lab=pets` show every glove design or every pet
+on its own, and `window.__fpc` (the store, `teleport(x, y, z)`) and
+`window.__fpcOrbit` (the camera) are there for poking at the game from the console.
 
 ## Where things are
 
 | | |
 | --- | --- |
-| `src/game/guns.js` | every gun: price, Ammo per click, model type, colours |
+| `src/game/gloves.js` | every pair of gloves: price, Strength per punch, design, colours |
+| `src/game/GloveModel.jsx` | how a glove is built, for each design |
+| `src/game/avatarRig.js` | the boxer's guard, the jab / hook / uppercut, the knockout fall |
 | `src/game/walls.js` | wall health and the stage payouts (`STAGE_WINS`) |
-| `src/game/trainers.js` | the shooting targets and their multipliers |
-| `src/game/boss.js` | boss health, rewards and the fight clock |
+| `src/game/world/StageWall.jsx` | a wall: its cracks, its health bar, how it bursts |
+| `src/game/trainers.js` | the punching bags and their multipliers |
+| `src/game/rings.js` | where the four boxing rings are (the server keeps a copy) |
+| `src/game/RingDirector.jsx` | your side of a ring fight: punches, hits, knockouts |
+| `src/game/pets.js`, `world/PetModel.jsx` | the pets and how they are drawn |
 | `src/game/passes.js` | the passes (2x Power, 2x Wins, Auto Wins, VIP Wins Pad) |
 | `src/game/cloudSave.js` | loading and saving progress on the game server |
 | `src/net/hosting.js` | which back end and matchmaker this page uses |
-| `src/game/world/layout.js` | the whole map: lobby, stages, Boss Arena, Space World |
+| `src/game/world/layout.js` | the whole map: lobby, stages, Space World |
+
+## The lobby, south to north
+
+The gate to Stage 1 with the avenue leading to it; the glove shop on its west side
+and the pet eggs on its east; the spawn plaza (the golden-glove statue, the VIP
+gloves, Space World's portal and the leaderboards); the training zone with two rows
+of punching bags; and at the back the four boxing rings with stands behind them.
 
 ## Deploying
 
 Push to `dev` or `main` and `.github/workflows/deploy.yml` builds the game and
-uploads it to Bloxity's frontend hosting (dev → `https://<id>.dev.play.bloxity.io`,
-main → `https://<id>.play.bloxity.io`). It needs, in this repo's GitHub settings:
+uploads it to Bloxity's frontend hosting (dev → `https://1-fist-per-click.dev.play.bloxity.io`,
+main → `https://1-fist-per-click.play.bloxity.io`). It needs one thing in this
+repo's GitHub settings:
 
 | where | name | value |
 | --- | --- | --- |
 | Actions → **Secrets** | `LEGION_DEPLOY_TOKEN` | the deploy token from My Games |
-| Actions → **Variables** | `LEGION_GAME_ID` | the hosting id |
-| Actions → **Variables** | `VITE_GAME_SLUG` | the slug on bloxity.io (usually the same) |
+
+`LEGION_GAME_ID` and `VITE_GAME_SLUG` can be set as Actions **Variables** too; both
+default to `1-fist-per-click`.
 
 The page works out its own back end from its address: saves go to
-`https://<id>[.dev].host.bloxity.io`, and the lobby socket goes through the Boxity
-matchmaker (`Legion.SDK.net.resolveEndpoint`), never straight to the host.
+`https://1-fist-per-click[.dev].host.bloxity.io`, and the lobby socket goes through
+the Boxity matchmaker (`Legion.SDK.net.resolveEndpoint`), never straight to the host.
 
 ## Prices
 
 Everything costs Wins. The VIP items, on their gold platforms, cost far more than
-their place in the ladder - that is what makes them VIP:
+their place in the ladder — that is what makes them VIP:
 
 | item | where | Wins |
 | --- | --- | --- |
@@ -61,10 +85,10 @@ their place in the ladder - that is what makes them VIP:
 | 2x Power | shop | 500K |
 | 2x Wins | shop | 1M |
 | Auto Wins | shop | 2.5M |
-| Phantom Blaster | gun zone, VIP platform | 1M |
-| Celestial Minigun | gun zone, VIP platform | 25M |
-| VIP Target (250x) | training zone, VIP platform | 250K |
-| Golden VIP Target (1000x) | training zone, VIP platform | 5M |
+| Phantom Fists | spawn plaza, VIP platform | 1M |
+| Celestial Gauntlets | spawn plaza, VIP platform | 25M |
+| VIP Bag (250x) | training zone, VIP platform | 250K |
+| Golden VIP Bag (1000x) | training zone, VIP platform | 5M |
 | Exclusive Egg (Tralaledon, x20) | egg zone, VIP platform | 50M |
 
-Change them in `guns.js`, `trainers.js`, `eggs.js` and `passes.js` (`cost`).
+Change them in `gloves.js`, `trainers.js`, `eggs.js` and `passes.js` (`cost`).

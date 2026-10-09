@@ -7,8 +7,13 @@ import { WALLS_PER_STAGE } from '../walls'
  * towards -Z behind the gate. One unit is roughly one metre (the player is 1.8 tall).
  */
 
-/** Half-size of the flat lobby plaza. */
+/** Half-width of the flat lobby (in X), and how far south of the origin it reaches. */
 export const LOBBY_HALF = 34
+/**
+ * How far north the lobby reaches. Further than it does south: behind the spawn
+ * plaza are the training zone's punching bags and, behind those, the boxing rings.
+ */
+export const LOBBY_NORTH = 90
 /** Depth of each terrace ring around the lobby. */
 export const RING = 6
 
@@ -44,15 +49,8 @@ export const CABIN_LEN = 44
 /** From one stage's gate (back face) to the next's. */
 export const STAGE_LEN = TUNNEL_LEAD + (WALLS_PER_STAGE - 2) * WALL_GAP + DIVIDER_T + CABIN_LEN + DIVIDER_T
 
-/** Near the north end of the central path, facing the gate. */
-export const SPAWN = [0, 2, LOBBY_HALF - 12]
-
-/**
- * Where the boss fight is: the middle of an arena far north of everything else.
- * You arrive at its north end, facing the boss in the south.
- */
-export const BOSS_CENTER = [0, 0, 420]
-export const BOSS_SPAWN = [0, 2, BOSS_CENTER[2] + 14]
+/** In the spawn plaza, at the top of the avenue, facing the gate. */
+export const SPAWN = [0, 2, 20]
 
 /** Space World's hub is four hundred metres west of the lobby; you arrive in it here. */
 export const SPACE_SPAWN = [-400, 2, 18]
@@ -65,7 +63,8 @@ const DEFAULT_FLOOR = ['#c9ccdb', '#abafc4']
 /**
  * One entry per stage; all ten of a stage's walls share its look.
  *
- * wall.style: 'cobble' | 'crystal' | 'lava' (voronoi rock), 'stones' (big rounded
+ * wall.style: 'blocks' (a grid of chunky slabs), 'hex' (honeycomb), 'diamond',
+ *             'cobble' | 'crystal' | 'lava' (voronoi rock), 'stones' (big rounded
  *             blocks), 'bricks', 'planks'
  * wall.glow:  emissive strength of the wall surface (0 = none)
  * wall.moss:  leaves growing over it
@@ -75,7 +74,7 @@ const DEFAULT_FLOOR = ['#c9ccdb', '#abafc4']
 export const THEMES = [
   {
     name: 'Stone',
-    wall: { style: 'stones', palette: ['#b9c0cc', '#a7afbd', '#c8ced9', '#9aa2b1'], gap: '#474c57', moss: true },
+    wall: { style: 'blocks', palette: ['#b9c0cc', '#a7afbd', '#c8ced9', '#9aa2b1'], gap: '#474c57', moss: true },
     side: '#6a70a8',
     neon: '#62f3ff',
   },
@@ -87,21 +86,21 @@ export const THEMES = [
   },
   {
     name: 'Sandstone',
-    wall: { style: 'bricks', palette: ['#e8c784', '#dcb86f', '#f0d396', '#d1ab60'], gap: '#a47d3e' },
+    wall: { style: 'diamond', palette: ['#e8c784', '#dcb86f', '#f0d396', '#d1ab60'], gap: '#a47d3e' },
     side: '#b08a58',
     neon: '#ffe08a',
     floor: ['#f2e6c9', '#e2d2ad'],
   },
   {
     name: 'Ice',
-    wall: { style: 'cobble', palette: ['#cdefff', '#b5e3fb', '#e4f7ff', '#a6d8f5'], gap: '#5aa7d6', glow: 0.25 },
+    wall: { style: 'hex', palette: ['#cdefff', '#b5e3fb', '#e4f7ff', '#a6d8f5'], gap: '#5aa7d6', glow: 0.25 },
     side: '#6aa6d8',
     neon: '#9ff3ff',
     floor: ['#e8f6ff', '#cfe8f7'],
   },
   {
     name: 'Jungle',
-    wall: { style: 'cobble', palette: ['#5e9e46', '#6fb34f', '#4f8c3c', '#7cc05a'], gap: '#2f4d24', moss: true },
+    wall: { style: 'blocks', palette: ['#5e9e46', '#6fb34f', '#4f8c3c', '#7cc05a'], gap: '#2f4d24', moss: true },
     side: '#5c9a5a',
     neon: '#8dff6a',
   },
@@ -113,7 +112,7 @@ export const THEMES = [
   },
   {
     name: 'Gold',
-    wall: { style: 'bricks', palette: ['#f5c542', '#e8b52f', '#ffd457', '#dba623'], gap: '#9c7415', glow: 0.2 },
+    wall: { style: 'hex', palette: ['#f5c542', '#e8b52f', '#ffd457', '#dba623'], gap: '#9c7415', glow: 0.2 },
     side: '#c2a24a',
     neon: '#fff08a',
     floor: ['#fbf1d2', '#eedfae'],
@@ -126,14 +125,14 @@ export const THEMES = [
   },
   {
     name: 'Obsidian',
-    wall: { style: 'cobble', palette: ['#2a2238', '#342a46', '#231c30', '#3b2f52'], gap: '#b44cff', glow: 0.6 },
+    wall: { style: 'diamond', palette: ['#2a2238', '#342a46', '#231c30', '#3b2f52'], gap: '#b44cff', glow: 0.6 },
     side: '#4a3a6a',
     neon: '#b65cff',
     floor: ['#b9b3c9', '#a39cb6'],
   },
   {
     name: 'Emerald',
-    wall: { style: 'bricks', palette: ['#2fbf71', '#27a862', '#3ad07f', '#219457'], gap: '#0f5a33', glow: 0.15 },
+    wall: { style: 'hex', palette: ['#2fbf71', '#27a862', '#3ad07f', '#219457'], gap: '#0f5a33', glow: 0.15 },
     side: '#3f9a86',
     neon: '#5affc8',
   },
@@ -146,20 +145,20 @@ export const THEMES = [
   },
   {
     name: 'Diamond',
-    wall: { style: 'crystal', palette: ['#9ff3ff', '#7fe6fb', '#bff8ff', '#6cd3f0'], gap: '#ffffff', glow: 0.45 },
+    wall: { style: 'diamond', palette: ['#9ff3ff', '#7fe6fb', '#bff8ff', '#6cd3f0'], gap: '#ffffff', glow: 0.45 },
     side: '#5a8ad0',
     neon: '#7ff9ff',
   },
   {
     name: 'Coral',
-    wall: { style: 'bricks', palette: ['#ff6f91', '#ff8fa3', '#ff4d6d', '#ffb3c1'], gap: '#7a1f3d' },
+    wall: { style: 'blocks', palette: ['#ff6f91', '#ff8fa3', '#ff4d6d', '#ffb3c1'], gap: '#7a1f3d' },
     side: '#ff8fa3',
     neon: '#ff4d6d',
     floor: ['#ffe3ea', '#ffc2d1'],
   },
   {
     name: 'Toxic',
-    wall: { style: 'crystal', palette: ['#aaff00', '#c6ff33', '#7acc00', '#e2ff80'], gap: '#2f4d0a', glow: 0.5 },
+    wall: { style: 'hex', palette: ['#aaff00', '#c6ff33', '#7acc00', '#e2ff80'], gap: '#2f4d0a', glow: 0.5 },
     side: '#7acc00',
     neon: '#c6ff33',
   },
@@ -172,7 +171,7 @@ export const THEMES = [
   },
   {
     name: 'Tundra',
-    wall: { style: 'cobble', palette: ['#8fd0ff', '#6bb8f0', '#a6e0ff', '#5aa7d6'], gap: '#3a6a8a', glow: 0.3 },
+    wall: { style: 'blocks', palette: ['#8fd0ff', '#6bb8f0', '#a6e0ff', '#5aa7d6'], gap: '#3a6a8a', glow: 0.3 },
     side: '#5a8ad0',
     neon: '#8fd0ff',
     floor: ['#d8f0ff', '#b8e0f5'],

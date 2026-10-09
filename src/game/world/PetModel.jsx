@@ -1,866 +1,397 @@
 import { useFrame } from '@react-three/fiber'
-import { createContext, useContext, useMemo, useRef } from 'react'
+import { useMemo, useRef } from 'react'
+import { AdditiveBlending, CapsuleGeometry, ConeGeometry, SphereGeometry, TorusGeometry } from 'three'
 
-import { unitBox, unitSpike } from './geometry'
+import { Sparkle } from './Effects'
+import { geometry } from './geometry'
 import { radialGlowTexture, shade } from './textures'
 
-/** Footstep dust puffs fade out over this long. */
-const DUST_LIFE_S = 1
-/** The ring that snaps out from under a footfall is quicker than the dust. */
-const RING_LIFE_S = 0.5
+/**
+ * The pets: round, chibi-style animals - a head as big as the body, glossy eyes with
+ * a highlight, rosy cheeks - each in a boxer's headband and a pair of tiny boxing
+ * gloves on its front paws, because this is a game about punching.
+ *
+ * Every pet is built from the same few shared shapes (a sphere, a capsule, a cone, a
+ * ring) scaled into place; what makes a rabbit a rabbit and a dragon a dragon is the
+ * SPECIES table below: ears, tail, horns, wings, spikes and how it moves.
+ *
+ * Lengths are in metres with the feet at y = 0, facing +Z. A pet stands about a
+ * metre tall to the tips of its ears.
+ */
 
-/** The pet's emissive strength, so every voxel below picks it up without the
- *  whole rig having to thread `glow` through a hundred call sites. */
-const GlowContext = createContext(0)
+const sphere = () => geometry('pet-sphere', () => new SphereGeometry(1, 24, 16))
+const capsule = () => geometry('pet-capsule', () => new CapsuleGeometry(1, 1, 6, 12))
+const cone = () => geometry('pet-cone', () => new ConeGeometry(1, 1, 12))
+const ring = () => geometry('pet-ring', () => new TorusGeometry(1, 0.13, 8, 28))
 
-/** The one coat material: flat-shaded, so each cube facet reads as its own plane. */
-function VoxelMaterial({ color, roughness = 0.42 }) {
-  const glow = useContext(GlowContext)
-  return (
-    <meshStandardMaterial color={color} emissive={color} emissiveIntensity={glow} roughness={roughness} flatShading />
-  )
+/** Glossy, a little soft: the look of a vinyl toy. */
+function Skin({ color, glow = 0, roughness = 0.45 }) {
+  return <meshStandardMaterial color={color} emissive={color} emissiveIntensity={glow} roughness={roughness} metalness={0.02} />
 }
 
-/** One voxel slab. Boxes are most of the vocabulary here, so this earns its keep. */
-function Box({ position, rotation, scale, color, roughness, shadow = true }) {
+/** One part: `kind` picks the shared shape, scaled and placed. */
+function Part({ kind = 'sphere', position, rotation, scale, color, glow, roughness, shadow = true }) {
+  const g = kind === 'capsule' ? capsule() : kind === 'cone' ? cone() : kind === 'ring' ? ring() : sphere()
   return (
-    <mesh position={position} rotation={rotation} scale={scale} geometry={unitBox()} castShadow={shadow}>
-      <VoxelMaterial color={color} roughness={roughness} />
-    </mesh>
-  )
-}
-
-/** A 4-sided pyramid - ears, fur spikes, horns and claws are all made of these. */
-function Spike({ position, rotation, scale, color, shadow = false }) {
-  return (
-    <mesh position={position} rotation={rotation} scale={scale} geometry={unitSpike()} castShadow={shadow}>
-      <VoxelMaterial color={color} roughness={0.5} />
+    <mesh geometry={g} position={position} rotation={rotation} scale={scale} castShadow={shadow}>
+      <Skin color={color} glow={glow} roughness={roughness} />
     </mesh>
   )
 }
 
 /**
- * Every pet is a different animal, and this is the whole of the difference: body
- * proportions, where the head sits, how long the legs are, which ears and tail it
- * wears, the extras bolted on (horns, wings, antlers, back plates) and how it
- * moves. PetModel reads one of these and builds the rest.
+ * What makes each animal itself.
  *
- * Lengths are in model units with the feet at y = 0, facing +Z.
- *
- * gait.mode: 'trot' (four legs, diagonal pairs) or 'hop' (rabbit, both back legs
- * together with an arc through the air). `rate` is [idle, extra at full speed].
+ * ears:   'long' | 'floppy' | 'pointy' | 'big' | 'round' | 'horns' | 'none'
+ * tail:   'puff' | 'wag' | 'curl' | 'bush' | 'stub' | 'heavy' | 'spade' | 'mane'
+ * snout:  how far the muzzle sticks out, 0..1
+ * gait:   'hop' (both back feet together, an arc through the air) or 'trot'
+ * extras: spikes down the back, wings, antlers, a unicorn's horn and mane, whiskers
+ * size:   overall scale
  */
 const SPECIES = {
-  /** Small, round and springy, with the ears of a jackrabbit. */
-  rabbit: {
-    scale: 0.95,
-    body: { size: [0.38, 0.36, 0.42], y: 0.34, z: -0.04 },
-    chest: { size: [0.4, 0.3, 0.2], y: 0.32, z: 0.16 },
-    head: { size: [0.34, 0.32, 0.3], y: 0.62, z: 0.2 },
-    snout: { size: [0.16, 0.12, 0.12] },
-    legs: { x: 0.14, hip: 0.19, len: 0.16, thick: 0.11, front: 0.16, back: -0.15, backPaw: 1.6 },
-    ears: 'long',
-    tail: 'puff',
-    ruff: 0.5,
-    whiskers: true,
-    gait: { mode: 'hop', swing: 0.9, bounce: 0.2, rate: [3.4, 3.6] },
-  },
-  /** Blocky and friendly: floppy ears, a tail that never stops. */
-  dog: {
-    scale: 1,
-    body: { size: [0.44, 0.38, 0.56], y: 0.38, z: -0.04 },
-    chest: { size: [0.46, 0.32, 0.22], y: 0.36, z: 0.2 },
-    head: { size: [0.4, 0.36, 0.36], y: 0.66, z: 0.38 },
-    snout: { size: [0.22, 0.16, 0.2] },
-    legs: { x: 0.18, hip: 0.22, len: 0.2, thick: 0.12, front: 0.22, back: -0.2 },
-    ears: 'floppy',
-    tail: 'wag',
-    ruff: 0.7,
-    gait: { mode: 'trot', swing: 0.6, bounce: 0.06, rate: [5, 6] },
-  },
-  /** Long, low and slinky, with a tail that curls at the tip. */
-  cat: {
-    scale: 0.94,
-    body: { size: [0.34, 0.31, 0.58], y: 0.42, z: -0.04 },
-    chest: { size: [0.36, 0.26, 0.22], y: 0.4, z: 0.2 },
-    head: { size: [0.33, 0.3, 0.29], y: 0.64, z: 0.36 },
-    snout: { size: [0.16, 0.12, 0.12] },
-    legs: { x: 0.14, hip: 0.27, len: 0.25, thick: 0.09, front: 0.22, back: -0.2 },
-    ears: 'cat',
-    tail: 'long',
-    ruff: 0.3,
-    whiskers: true,
-    gait: { mode: 'trot', swing: 0.45, bounce: 0.035, rate: [4.4, 5.6] },
-  },
-  /** The only two-legged one: heavy tail out back, tiny arms, plates down the spine. */
-  dino: {
-    scale: 1,
-    body: { size: [0.46, 0.48, 0.54], y: 0.56, z: -0.02 },
-    chest: { size: [0.42, 0.34, 0.24], y: 0.52, z: 0.2 },
-    head: { size: [0.42, 0.36, 0.42], y: 0.94, z: 0.3 },
-    snout: { size: [0.3, 0.2, 0.26] },
-    legs: { x: 0.18, hip: 0.34, len: 0.32, thick: 0.17, back: -0.06, biped: true },
-    ears: 'none',
-    tail: 'heavy',
-    backSpikes: true,
-    fangs: true,
-    arms: true,
-    gait: { mode: 'trot', swing: 0.55, bounce: 0.1, rate: [3.6, 4.4] },
-  },
-  /** Low-slung, huge ears, and the biggest brush of a tail in the game. */
-  fox: {
-    scale: 0.95,
-    body: { size: [0.42, 0.34, 0.58], y: 0.34, z: -0.04 },
-    chest: { size: [0.44, 0.3, 0.22], y: 0.32, z: 0.2 },
-    head: { size: [0.4, 0.34, 0.34], y: 0.58, z: 0.38 },
-    snout: { size: [0.18, 0.13, 0.26] },
-    legs: { x: 0.16, hip: 0.19, len: 0.17, thick: 0.1, front: 0.22, back: -0.2 },
-    ears: 'fox',
-    tail: 'bush',
-    ruff: 1,
-    gait: { mode: 'trot', swing: 0.62, bounce: 0.055, rate: [5.2, 6.4] },
-  },
-  /** Broad, heavy and humped at the shoulder; rolls along rather than trots. */
-  bear: {
-    scale: 1.05,
-    body: { size: [0.58, 0.48, 0.66], y: 0.46, z: -0.04 },
-    chest: { size: [0.56, 0.4, 0.24], y: 0.44, z: 0.24 },
-    head: { size: [0.42, 0.38, 0.36], y: 0.74, z: 0.4 },
-    snout: { size: [0.26, 0.18, 0.18] },
-    legs: { x: 0.22, hip: 0.26, len: 0.24, thick: 0.18, front: 0.24, back: -0.24 },
-    ears: 'round',
-    tail: 'stub',
-    hump: true,
-    ruff: 0.4,
-    gait: { mode: 'trot', swing: 0.38, bounce: 0.07, rate: [3.2, 3.8] },
-  },
-  /** Horns, bat wings and a spade tail, head carried high on a short neck. */
-  dragon: {
-    scale: 1,
-    body: { size: [0.44, 0.4, 0.54], y: 0.5, z: -0.04 },
-    chest: { size: [0.42, 0.34, 0.22], y: 0.46, z: 0.2 },
-    head: { size: [0.38, 0.34, 0.4], y: 0.92, z: 0.34 },
-    snout: { size: [0.24, 0.16, 0.24] },
-    neck: { size: [0.24, 0.26, 0.24], y: 0.74, z: 0.26 },
-    legs: { x: 0.18, hip: 0.28, len: 0.26, thick: 0.13, front: 0.2, back: -0.2 },
-    ears: 'horns',
-    tail: 'spade',
-    backSpikes: true,
-    wings: true,
-    fangs: true,
-    gait: { mode: 'trot', swing: 0.5, bounce: 0.09, rate: [4.4, 5.4] },
-  },
-  /** Tall and thin-legged, antlers up top, a white flag of a tail. */
-  deer: {
-    scale: 1,
-    body: { size: [0.36, 0.34, 0.56], y: 0.62, z: -0.04 },
-    chest: { size: [0.38, 0.3, 0.22], y: 0.6, z: 0.2 },
-    head: { size: [0.28, 0.26, 0.34], y: 1.02, z: 0.34 },
-    snout: { size: [0.18, 0.14, 0.14] },
-    neck: { size: [0.19, 0.34, 0.2], y: 0.84, z: 0.26 },
-    legs: { x: 0.15, hip: 0.46, len: 0.44, thick: 0.075, front: 0.2, back: -0.2, hooves: true },
-    ears: 'deer',
-    tail: 'flick',
-    antlers: true,
-    gait: { mode: 'trot', swing: 0.72, bounce: 0.075, rate: [4.6, 6] },
-  },
-  /** Longer and leggier than the fox, with a thick mane and a straight brush tail. */
-  wolf: {
-    scale: 1.02,
-    body: { size: [0.46, 0.4, 0.66], y: 0.48, z: -0.04 },
-    chest: { size: [0.48, 0.34, 0.24], y: 0.46, z: 0.24 },
-    head: { size: [0.4, 0.35, 0.38], y: 0.76, z: 0.44 },
-    snout: { size: [0.2, 0.15, 0.24] },
-    legs: { x: 0.18, hip: 0.3, len: 0.28, thick: 0.12, front: 0.26, back: -0.24 },
-    ears: 'wolf',
-    tail: 'brush',
-    mane: true,
-    ruff: 0.8,
-    fangs: true,
-    gait: { mode: 'trot', swing: 0.66, bounce: 0.06, rate: [4.8, 6.2] },
-  },
-  /** A horse silhouette: long muzzle, hooves, a flowing mane, wings and the horn. */
-  unicorn: {
-    scale: 1.02,
-    body: { size: [0.44, 0.42, 0.64], y: 0.58, z: -0.04 },
-    // Never the same width as the body, or their side faces z-fight.
-    chest: { size: [0.46, 0.36, 0.22], y: 0.56, z: 0.24 },
-    head: { size: [0.26, 0.28, 0.42], y: 1.04, z: 0.42 },
-    snout: { size: [0.2, 0.18, 0.14] },
-    neck: { size: [0.22, 0.36, 0.24], y: 0.84, z: 0.3 },
-    legs: { x: 0.17, hip: 0.44, len: 0.42, thick: 0.1, front: 0.24, back: -0.24, hooves: true },
-    ears: 'horse',
-    tail: 'flow',
-    horn: true,
-    mane: true,
-    wings: true,
-    gait: { mode: 'trot', swing: 0.7, bounce: 0.08, rate: [4.6, 6] },
-  },
+  rabbit: { ears: 'long', tail: 'puff', snout: 0.45, gait: 'hop', whiskers: true, size: 0.95 },
+  dog: { ears: 'floppy', tail: 'wag', snout: 0.85, gait: 'trot', size: 1 },
+  cat: { ears: 'pointy', tail: 'curl', snout: 0.5, gait: 'trot', whiskers: true, size: 0.95 },
+  dino: { ears: 'none', tail: 'heavy', snout: 0.9, gait: 'trot', spikes: true, size: 1.05 },
+  fox: { ears: 'big', tail: 'bush', snout: 0.8, gait: 'trot', size: 0.98 },
+  bear: { ears: 'round', tail: 'stub', snout: 0.85, gait: 'trot', chunky: true, size: 1.08 },
+  dragon: { ears: 'horns', tail: 'spade', snout: 0.85, gait: 'trot', wings: true, spikes: true, size: 1.05 },
+  deer: { ears: 'pointy', tail: 'puff', snout: 0.7, gait: 'trot', antlers: true, size: 1 },
+  wolf: { ears: 'pointy', tail: 'bush', snout: 0.9, gait: 'trot', size: 1.02 },
+  unicorn: { ears: 'pointy', tail: 'mane', snout: 0.75, gait: 'trot', horn: true, mane: true, size: 1.05 },
+}
+
+/** The body plan every species shares. */
+const BODY = { r: [0.24, 0.22, 0.27], y: 0.34 }
+const HEAD = { r: 0.27, y: 0.7, z: 0.1 }
+/** The neck pivot the head nods about. */
+const NECK = [0, 0.5, 0.08]
+const LEGS = [
+  { x: 0.13, z: 0.13, front: true, sign: 1 },
+  { x: -0.13, z: 0.13, front: true, sign: -1 },
+  { x: 0.13, z: -0.13, front: false, sign: -1 },
+  { x: -0.13, z: -0.13, front: false, sign: 1 },
+]
+const HIP_Y = 0.22
+const LEG_LEN = 0.12
+/** How often a pet blinks, and how long a blink lasts. */
+const BLINK_EVERY_S = 3.6
+const BLINK_S = 0.13
+/** The boxing kit: red gloves with white cuffs, and a headband. */
+const GLOVE = '#ff3b3b'
+const CUFF = '#ffffff'
+
+/** Ears, in the head's frame (head centre at the origin). */
+function Ears({ kind, colors, glow, earRefs }) {
+  const inner = shade(colors.accent, 0.25)
+  const pair = (render) =>
+    [1, -1].map((side, i) => (
+      <group key={side} ref={(el) => (earRefs.current[i] = el)}>
+        {render(side)}
+      </group>
+    ))
+  if (kind === 'long') {
+    return pair((side) => (
+      <group position={[side * 0.1, 0.2, -0.02]} rotation={[-0.1, 0, side * -0.18]}>
+        <Part kind="capsule" position={[0, 0.2, 0]} scale={[0.065, 0.16, 0.045]} color={colors.body} glow={glow} />
+        <Part kind="capsule" position={[0, 0.2, 0.025]} scale={[0.035, 0.12, 0.02]} color={inner} glow={glow} shadow={false} />
+      </group>
+    ))
+  }
+  if (kind === 'floppy') {
+    return pair((side) => (
+      <group position={[side * 0.24, 0.08, 0]} rotation={[0.15, 0, side * 0.5]}>
+        <Part position={[0, -0.12, 0]} scale={[0.07, 0.15, 0.1]} color={colors.accent} glow={glow} />
+      </group>
+    ))
+  }
+  if (kind === 'pointy' || kind === 'big') {
+    const big = kind === 'big' ? 1.35 : 1
+    return pair((side) => (
+      <group position={[side * 0.15, 0.2, 0]} rotation={[0, 0, side * -0.32]}>
+        <Part kind="cone" position={[0, 0.07 * big, 0]} scale={[0.085 * big, 0.17 * big, 0.06]} color={colors.body} glow={glow} />
+        <Part kind="cone" position={[0, 0.06 * big, 0.022]} scale={[0.05 * big, 0.11 * big, 0.03]} color={inner} glow={glow} shadow={false} />
+      </group>
+    ))
+  }
+  if (kind === 'round') {
+    return pair((side) => (
+      <group position={[side * 0.18, 0.2, -0.02]}>
+        <Part scale={[0.08, 0.08, 0.05]} color={colors.accent} glow={glow} />
+        <Part position={[0, 0, 0.03]} scale={[0.045, 0.045, 0.02]} color={inner} glow={glow} shadow={false} />
+      </group>
+    ))
+  }
+  if (kind === 'horns') {
+    return pair((side) => (
+      <group position={[side * 0.13, 0.22, -0.05]} rotation={[-0.5, 0, side * -0.25]}>
+        <Part kind="cone" position={[0, 0.07, 0]} scale={[0.05, 0.16, 0.05]} color={colors.belly} glow={glow} roughness={0.3} />
+      </group>
+    ))
+  }
+  return null
+}
+
+/** The tail, in the body's frame, from a pivot at the base of the spine. */
+function Tail({ kind, colors, glow }) {
+  const tip = shade(colors.accent, 0.4)
+  switch (kind) {
+    case 'puff':
+      return <Part position={[0, 0, -0.04]} scale={[0.09, 0.09, 0.09]} color={colors.belly} glow={glow} />
+    case 'wag':
+      return <Part kind="capsule" position={[0, 0.1, -0.06]} rotation={[-0.6, 0, 0]} scale={[0.04, 0.09, 0.04]} color={colors.body} glow={glow} />
+    case 'curl':
+      return (
+        <>
+          <Part kind="capsule" position={[0, 0.12, -0.08]} rotation={[-0.4, 0, 0]} scale={[0.035, 0.12, 0.035]} color={colors.body} glow={glow} />
+          <Part position={[0, 0.27, -0.12]} scale={[0.05, 0.05, 0.05]} color={colors.accent} glow={glow} />
+        </>
+      )
+    case 'bush':
+      return (
+        <>
+          <Part position={[0, 0.1, -0.14]} rotation={[-0.7, 0, 0]} scale={[0.1, 0.18, 0.1]} color={colors.body} glow={glow} />
+          <Part position={[0, 0.22, -0.24]} scale={[0.07, 0.08, 0.07]} color={tip} glow={glow} />
+        </>
+      )
+    case 'stub':
+      return <Part position={[0, 0.02, -0.03]} scale={[0.06, 0.06, 0.06]} color={colors.accent} glow={glow} />
+    case 'heavy':
+      return <Part kind="cone" position={[0, -0.02, -0.18]} rotation={[-1.75, 0, 0]} scale={[0.11, 0.38, 0.09]} color={colors.body} glow={glow} />
+    case 'spade':
+      return (
+        <>
+          <Part kind="capsule" position={[0, 0.02, -0.18]} rotation={[-1.4, 0, 0]} scale={[0.035, 0.14, 0.035]} color={colors.body} glow={glow} />
+          <Part kind="cone" position={[0, 0.07, -0.37]} rotation={[-1.2, 0, Math.PI / 4]} scale={[0.08, 0.1, 0.02]} color={colors.accent} glow={glow} />
+        </>
+      )
+    case 'mane':
+      return (
+        <>
+          {[0, 1, 2].map((i) => (
+            <Part
+              key={i}
+              position={[0, 0.06 - i * 0.06, -0.06 - i * 0.07]}
+              scale={[0.07, 0.07, 0.07]}
+              color={[colors.accent, colors.belly, '#ffffff'][i]}
+              glow={glow}
+            />
+          ))}
+        </>
+      )
+    default:
+      return null
+  }
 }
 
 /**
- * A companion animal, built entirely from boxes and 4-sided pyramids — chunky
- * voxel critters in the same procedural style as EggStand's voxel egg and
- * SwordModel's blocky blade, with no external model files. Everything is
- * flat-shaded so the cube facets read cleanly.
+ * One pet, posed and animated.
  *
- * `pet.species` (see SPECIES above, and pets.js) picks the animal: a rabbit, dog,
- * cat, dino, fox, bear, dragon, deer, wolf or unicorn, each with its own
- * proportions, ears, tail, extras and way of moving. `pet.colors` paints it and
- * `pet.glow` sets how much it shines.
- *
- * With `walkRef` (a `{ current: { speed } }` updated every frame by the caller,
- * same idea as the player avatar's `motionRef`) it comes alive: the legs swing
- * from the hip, the body bounces and squashes on each footfall, the head nods a
- * beat behind it, the ears and tail swing later still, and a puff of dust plus a
- * quick ring kicks up from under each step. The rabbit hops instead, arcing
- * through the air with its back legs tucked. Standing still, it breathes, sways
- * its tail and flicks an ear now and then.
- *
- * @param {{ pet: object, walkRef?: React.MutableRefObject<{ speed: number }> }} props
+ * @param {{ pet: import('../pets').PETS[number], walkRef?: React.MutableRefObject<{ speed: number }> }} props
+ *   `walkRef.current.speed` (m/s) drives the trot; without it the pet stands and
+ *   breathes, blinks and wags.
  */
 export function PetModel({ pet, walkRef }) {
   const { colors, glow = 0 } = pet
   const s = SPECIES[pet.species] ?? SPECIES.dog
+  const skinGlow = glow * 0.45
 
   const bounceRef = useRef(null)
-  const leanRef = useRef(null)
   const headRef = useRef(null)
   const tailRef = useRef(null)
-  const wingRefs = useRef([])
+  const eyeRefs = useRef([])
   const legRefs = useRef([])
   const earRefs = useRef([])
-  const dustRef = useRef(null)
-  const ringRef = useRef(null)
+  const wingRefs = useRef([])
   const phase = useRef(0)
-  const step = useRef({ beat: 0, dust: DUST_LIFE_S, ring: RING_LIFE_S })
-
-  /** Hips, in the order the refs are collected. `sign` picks which legs swing together. */
-  const legs = useMemo(() => {
-    const { x, front, back, biped } = s.legs
-    if (biped) {
-      return [
-        { x, z: back, sign: 1 },
-        { x: -x, z: back, sign: -1 },
-      ]
-    }
-    return [
-      { x, z: front, sign: 1 },
-      { x: -x, z: front, sign: -1 },
-      { x, z: back, sign: -1 },
-      { x: -x, z: back, sign: 1 },
-    ]
-  }, [s])
-
-  // Everything below hangs off the head cube, so derive it once rather than
-  // repeating half-depths at every call site.
-  const headHalf = s.head.size[2] / 2
-  const headTop = s.head.size[1] / 2
-  const snoutZ = headHalf + s.snout.size[2] / 2 - 0.02
-  const noseZ = snoutZ + s.snout.size[2] / 2
-  /** The face plate's front surface: where the eyes and blush are pinned. */
-  const faceZ = headHalf + 0.01
-  const tailBase = [0, s.body.y + s.body.size[1] * 0.1, s.body.z - s.body.size[2] / 2]
-  // Eyes clear the muzzle rather than sinking into it, which matters on the
-  // broad-snouted species (dino, bear, dragon, unicorn): sit them above its top
-  // edge, and out towards the cheeks but never past the side of the head.
-  const muzzleTop = -s.head.size[1] * 0.14 + s.snout.size[1] / 2
-  const eyeY = Math.max(s.head.size[1] * 0.14, muzzleTop + 0.055)
-  const eyeX = Math.min(
-    Math.max(s.head.size[0] * 0.27, s.snout.size[0] / 2 + 0.05),
-    s.head.size[0] / 2 - 0.045,
-  )
-  // The collar rides the neck where there is one, otherwise the base of the head.
-  const collar = s.neck
-    ? { y: s.neck.y - s.neck.size[1] * 0.25, z: s.neck.z, size: [s.neck.size[0] * 1.35, 0.08, s.neck.size[2] * 1.3] }
-    : { y: s.head.y - headTop + 0.02, z: s.head.z, size: [s.head.size[0] * 1.1, 0.08, s.head.size[2] * 0.95] }
-  /** Tips of tails and fur: a darker take on the coat. */
-  const furTip = shade(colors.accent, -0.45)
+  // Each pet blinks on its own clock, from its id.
+  const offset = useMemo(() => [...pet.id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 7, [pet.id])
 
   useFrame((state, delta) => {
-    const t = state.clock.elapsedTime
+    const t = state.clock.elapsedTime + offset
     const speed = walkRef?.current?.speed ?? 0
     const moving = Math.min(speed / 4, 1)
-    const [idleRate, gainRate] = s.gait.rate
-    phase.current += delta * (idleRate + moving * gainRate)
+    const hop = s.gait === 'hop'
+    phase.current += delta * (4 + moving * (hop ? 5 : 8))
     const p = phase.current
-    const hopping = s.gait.mode === 'hop'
 
-    // One "stride" is a full turn of `phase`. A trot plants a foot twice a turn,
-    // a hop lands once - `strike` is 1 at the moment of a footfall, 0 mid-air.
-    const strike = hopping ? Math.max(0, -Math.sin(p)) : Math.abs(Math.sin(p))
-    const lift = hopping ? Math.max(0, Math.sin(p)) : strike
-
+    // Trot: legs swing in diagonal pairs. Hop: front reach, back tuck, all at once.
+    const lift = hop ? Math.max(0, Math.sin(p)) : Math.abs(Math.sin(p))
     legRefs.current.forEach((leg, i) => {
       if (!leg) return
-      if (hopping) {
-        // Back legs tuck up under the body, front legs reach ahead.
-        const front = legs[i].z > 0
-        leg.rotation.x = (front ? 1 : -1) * lift * s.gait.swing * moving
-      } else {
-        leg.rotation.x = moving > 0.03 ? Math.sin(p * legs[i].sign) * s.gait.swing * moving : 0
-      }
+      const l = LEGS[i]
+      leg.rotation.x = hop ? (l.front ? 1 : -1) * lift * 0.8 * moving : Math.sin(p * l.sign) * 0.7 * moving
     })
 
     if (bounceRef.current) {
-      const bounce = lift * s.gait.bounce * moving
-      bounceRef.current.position.y = bounce
-      // Squash on the landing, stretch through the air: the whole reason a blocky
-      // walk reads as weight rather than a slide.
-      const squash = hopping ? lift * 0.12 : strike * 0.07
-      const breathe = Math.sin(t * 1.6) * 0.015 * (1 - moving)
-      bounceRef.current.scale.set(1 + squash * 0.5 + breathe * 0.5, 1 - squash + breathe, 1 + squash * 0.5 + breathe * 0.5)
+      const breathe = Math.sin(t * 2.2) * 0.02 * (1 - moving)
+      bounceRef.current.position.y = lift * (hop ? 0.16 : 0.05) * moving + Math.max(0, breathe) * 0.3
+      const squash = (hop ? (1 - lift) * 0.08 : lift * 0.05) * moving
+      bounceRef.current.scale.set(1 + squash * 0.6 + breathe * 0.5, 1 - squash + breathe, 1 + squash * 0.6 + breathe * 0.5)
+      bounceRef.current.rotation.x = hop ? -Math.sin(p) * 0.25 * moving : 0
     }
-
-    if (leanRef.current) {
-      // Nose up on the way up, down on the way down - strongest on the hop.
-      leanRef.current.rotation.x = hopping
-        ? -Math.sin(p) * 0.3 * moving
-        : Math.sin(p * 2) * 0.05 * moving
-    }
-
     if (headRef.current) {
-      // The head trails the body by a beat, and sways gently when idle.
-      headRef.current.rotation.x = Math.sin(p * 2 + 0.8) * 0.1 * moving + Math.sin(t * 1.3) * 0.03 * (1 - moving)
-      headRef.current.rotation.y = Math.sin(t * 0.8) * 0.12 * (1 - moving)
+      headRef.current.rotation.x = Math.sin(p * 2 + 0.6) * 0.08 * moving + Math.sin(t * 1.2) * 0.04 * (1 - moving)
+      // An idle look round, and a tilt now and then - the cute bit.
+      headRef.current.rotation.y = Math.sin(t * 0.7) * 0.25 * (1 - moving)
+      headRef.current.rotation.z = Math.sin(t * 0.45) ** 3 * 0.18 * (1 - moving)
     }
-
-    // An ear flick every few seconds while standing around, and a swing in step
-    // with the body once moving.
-    const flick = Math.max(0, Math.sin(t * 0.8) - 0.985) * 40
     earRefs.current.forEach((ear, i) => {
       if (!ear) return
-      // Each pair is already tilted by its style (horns sweep back, floppy ears
-      // hang forward), so swing around that rather than flattening it to zero.
-      if (ear.userData.restX === undefined) ear.userData.restX = ear.rotation.x
-      const side = i % 2 === 0 ? 1 : -1
-      ear.rotation.x = ear.userData.restX + Math.sin(p * 2 + 1.3) * 0.22 * moving + flick * side * 0.3 * (1 - moving)
+      const side = i === 0 ? 1 : -1
+      const flick = Math.max(0, Math.sin(t * 0.9 + i) - 0.97) * 12
+      ear.rotation.z = side * (Math.sin(p * 2) * 0.12 * moving + flick * 0.4)
     })
-
     if (tailRef.current) {
-      tailRef.current.rotation.y = moving > 0.03 ? Math.sin(p * 1.6) * 0.5 : Math.sin(t * 1.6) * 0.22
-      tailRef.current.rotation.x = Math.sin(p * 2 + 2) * 0.12 * moving
+      tailRef.current.rotation.y = Math.sin(t * (moving > 0.05 ? 12 : 4)) * (s.tail === 'wag' ? 0.6 : 0.3)
     }
-
+    // Blink.
+    const blink = (t % BLINK_EVERY_S) < BLINK_S ? 0.12 : 1
+    eyeRefs.current.forEach((eye) => {
+      if (eye) eye.scale.y = blink
+    })
     wingRefs.current.forEach((wing, i) => {
       if (!wing) return
       const side = i === 0 ? 1 : -1
-      wing.rotation.z = side * (0.3 + Math.sin(t * 4 + moving * 6) * (0.15 + moving * 0.25))
+      wing.rotation.z = side * (0.4 + Math.sin(t * (4 + moving * 8)) * (0.25 + moving * 0.2))
     })
-
-    // A puff of dust and a ring each time a stride lands, same beat detector the
-    // player uses for footstep sounds.
-    const d = step.current
-    const beat = Math.floor(p / Math.PI - 0.5)
-    if (moving > 0.1 && beat !== d.beat) {
-      d.beat = beat
-      d.dust = 0
-      d.ring = 0
-    } else {
-      d.dust = Math.min(DUST_LIFE_S, d.dust + delta)
-      d.ring = Math.min(RING_LIFE_S, d.ring + delta)
-    }
-    if (dustRef.current) {
-      const age = d.dust / DUST_LIFE_S
-      dustRef.current.visible = age < 1
-      if (age < 1) {
-        dustRef.current.scale.setScalar(0.18 + age * 0.3)
-        dustRef.current.material.opacity = (1 - age) * 0.45
-      }
-    }
-    if (ringRef.current) {
-      const age = d.ring / RING_LIFE_S
-      ringRef.current.visible = age < 1
-      if (age < 1) {
-        ringRef.current.scale.setScalar(0.2 + age * 0.85)
-        ringRef.current.material.opacity = (1 - age) * (1 - age) * 0.5
-      }
-    }
   })
 
+  // Always dark eyes: a pale one reads as a blank stare, not a colour.
+  const eyeColor = '#1b1b25'
+  const snout = s.snout
+
   return (
-    <GlowContext.Provider value={glow}>
-      <group scale={s.scale * (1 + glow * 0.1)}>
-        {/* Footfall marks, flat on the ground and outside the bounce so they stay put. */}
-        <mesh ref={ringRef} position={[0, 0.012, 0.02]} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
-          <ringGeometry args={[0.62, 1, 20]} />
-          <meshBasicMaterial color={glow > 0 ? colors.accent : '#ffffff'} transparent depthWrite={false} toneMapped={false} />
-        </mesh>
-        <mesh ref={dustRef} position={[0, 0.015, 0.04]} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
-          <planeGeometry args={[1, 1]} />
-          <meshBasicMaterial
-            map={radialGlowTexture()}
-            color={glow > 0 ? colors.accent : '#e8e2d8'}
-            transparent
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </mesh>
+    <group scale={s.size}>
+      {/* The soft shadow-glow of the rarer pets, and their sparkle. */}
+      {glow >= 0.3 && (
+        <sprite position={[0, 0.55, 0]} scale={1.6}>
+          <spriteMaterial map={radialGlowTexture()} color={colors.accent} transparent opacity={0.25 + glow * 0.25} blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
+        </sprite>
+      )}
+      {glow >= 0.6 && <Sparkle count={10} scale={[1, 1.1, 1]} position={[0, 0.6, 0]} size={3} speed={0.5} color={colors.accent} />}
 
-        {/* A gem floating over the top-tier pets. */}
-        {glow >= 0.6 && (
-          <mesh position={[0, s.head.y + s.head.size[1] * 0.8, s.head.z]} rotation={[0, Math.PI / 4, 0]} scale={0.055} castShadow>
-            <octahedronGeometry args={[1, 0]} />
-            <meshStandardMaterial color="#ffffff" emissive={colors.accent} emissiveIntensity={0.9} roughness={0.1} metalness={0.4} />
-          </mesh>
-        )}
+      <group ref={bounceRef}>
+        {/* Legs, from the hip; the front paws wear the gloves. */}
+        {LEGS.map((leg, i) => (
+          <group key={i} position={[leg.x, HIP_Y, leg.z]} ref={(el) => (legRefs.current[i] = el)}>
+            <Part kind="capsule" position={[0, -LEG_LEN / 2, 0]} scale={[0.065, LEG_LEN / 2, 0.065]} color={colors.body} glow={skinGlow} />
+            {leg.front ? (
+              <group position={[0, -LEG_LEN - 0.02, 0.03]}>
+                <Part scale={[0.085, 0.08, 0.095]} color={GLOVE} roughness={0.3} />
+                <Part kind="ring" position={[0, 0.06, -0.01]} rotation={[Math.PI / 2, 0, 0]} scale={[0.062, 0.062, 0.062]} color={CUFF} shadow={false} />
+              </group>
+            ) : (
+              <Part position={[0, -LEG_LEN - 0.02, 0.02]} scale={[0.075, 0.05, 0.09]} color={colors.accent} glow={skinGlow} />
+            )}
+          </group>
+        ))}
 
-        <group ref={bounceRef}>
-          {/* Legs - a pivot at the hip, so the blocky foot below can swing. */}
-          {legs.map(({ x, z }, i) => (
-            <group key={i} position={[x, s.legs.hip, z]} ref={(el) => (legRefs.current[i] = el)}>
-              <Box
-                position={[0, -s.legs.len / 2, 0]}
-                scale={[s.legs.thick, s.legs.len, s.legs.thick]}
-                color={colors.accent}
-              />
-              {s.legs.hooves ? (
-                <Box
-                  position={[0, -s.legs.len - 0.03, 0]}
-                  scale={[s.legs.thick * 1.25, 0.07, s.legs.thick * 1.25]}
-                  color={furTip}
-                  roughness={0.3}
-                />
-              ) : (
-                <Box
-                  position={[0, -s.legs.len - 0.025, 0.01]}
-                  scale={[
-                    s.legs.thick * 1.2 * (z < 0 ? (s.legs.backPaw ?? 1) : 1),
-                    0.06,
-                    s.legs.thick * 1.3 * (z < 0 ? (s.legs.backPaw ?? 1) : 1),
-                  ]}
-                  color={shade(colors.accent, -0.3)}
-                  roughness={0.55}
-                />
-              )}
+        {/* Body and belly. */}
+        <Part position={[0, BODY.y, 0]} scale={s.chunky ? [0.28, 0.24, 0.29] : BODY.r} color={colors.body} glow={skinGlow} />
+        <Part position={[0, BODY.y - 0.03, 0.17]} scale={[0.17, 0.15, 0.11]} color={colors.belly} glow={skinGlow} shadow={false} />
+        {s.spikes &&
+          [0, 1, 2, 3].map((i) => (
+            <Part
+              key={i}
+              kind="cone"
+              position={[0, BODY.y + 0.2 - i * 0.02, 0.05 - i * 0.1]}
+              rotation={[-0.3, 0, 0]}
+              scale={[0.045, 0.09, 0.03]}
+              color={colors.accent}
+              glow={skinGlow}
+            />
+          ))}
+        {s.wings &&
+          [1, -1].map((side, i) => (
+            <group key={side} position={[side * 0.18, BODY.y + 0.12, -0.04]} ref={(el) => (wingRefs.current[i] = el)}>
+              <Part position={[side * 0.17, 0.08, 0]} rotation={[0, 0, side * 0.4]} scale={[0.2, 0.1, 0.025]} color={colors.accent} glow={skinGlow} />
+              <Part position={[side * 0.26, 0.14, 0]} rotation={[0, 0, side * 0.6]} scale={[0.1, 0.05, 0.02]} color={colors.belly} glow={skinGlow} shadow={false} />
             </group>
           ))}
+        <group ref={tailRef} position={[0, BODY.y + 0.02, -BODY.r[2] + 0.04]}>
+          <Tail kind={s.tail} colors={colors} glow={skinGlow} />
+        </group>
 
-          <group ref={leanRef}>
-            {/* Body, chest and underside. */}
-            <Box position={[0, s.body.y, s.body.z]} scale={s.body.size} color={colors.body} />
-            <Box position={[0, s.chest.y, s.chest.z]} scale={s.chest.size} color={colors.belly} roughness={0.5} />
-            <Box
-              position={[0, s.body.y - s.body.size[1] * 0.34, s.body.z]}
-              scale={[s.body.size[0] * 0.86, s.body.size[1] * 0.34, s.body.size[2] * 0.8]}
-              color={colors.belly}
-              roughness={0.5}
-              shadow={false}
-            />
-            {/* A flat highlight facet along the top of the back - the "toy shelf" shine. */}
-            <Box
-              position={[s.body.size[0] * 0.2, s.body.y + s.body.size[1] / 2 + 0.005, s.body.z]}
-              scale={[s.body.size[0] * 0.34, 0.02, s.body.size[2] * 0.5]}
-              color="#ffffff"
-              roughness={0.2}
-              shadow={false}
-            />
-
-            {/* A humped shoulder, for the bear. */}
-            {s.hump && (
-              <Box
-                position={[0, s.body.y + s.body.size[1] * 0.42, s.body.z + s.body.size[2] * 0.2]}
-                scale={[s.body.size[0] * 0.72, s.body.size[1] * 0.3, s.body.size[2] * 0.4]}
-                color={colors.body}
-              />
-            )}
-
-            {/* Shaggy fur down the spine, as much of it as the species wears. */}
-            {s.ruff > 0 &&
-              [0.3, 0.1, -0.1, -0.3].map((f, i) => (
-                <Spike
-                  key={i}
-                  position={[0, s.body.y + s.body.size[1] / 2 + 0.03, s.body.z + s.body.size[2] * f]}
-                  scale={[0.1 * s.ruff, 0.16 * s.ruff, 0.1 * s.ruff]}
-                  color={colors.belly}
-                  shadow
-                />
-              ))}
-
-            {/* A thick mane around the shoulders. */}
-            {s.mane &&
-              [-0.9, -0.45, 0, 0.45, 0.9].map((a, i) => (
-                <Box
-                  key={i}
-                  position={[
-                    Math.sin(a) * s.body.size[0] * 0.55,
-                    s.body.y + s.body.size[1] * 0.45 + Math.cos(a) * 0.08,
-                    s.body.z + s.body.size[2] * 0.42,
-                  ]}
-                  rotation={[0, 0, -a]}
-                  scale={[0.1, 0.2, 0.14]}
-                  color={colors.accent}
-                  roughness={0.5}
-                />
-              ))}
-
-            {/* Plates down the back. */}
-            {s.backSpikes &&
-              [0.34, 0.14, -0.06, -0.26].map((f, i) => (
-                <Spike
-                  key={i}
-                  position={[0, s.body.y + s.body.size[1] / 2 + 0.05, s.body.z + s.body.size[2] * f]}
-                  rotation={[0, Math.PI / 4, 0]}
-                  scale={[0.07, 0.2 - i * 0.025, 0.07]}
-                  color={colors.accent}
-                  shadow
-                />
-              ))}
-
-            {/* Tiny arms, for the dino. */}
-            {s.arms &&
-              [1, -1].map((side) => (
-                <group key={side} position={[side * s.body.size[0] * 0.5, s.body.y + 0.04, s.body.z + 0.18]}>
-                  <Box rotation={[0.5, 0, 0]} scale={[0.07, 0.16, 0.07]} color={colors.accent} />
-                  <Box position={[0, -0.09, 0.05]} scale={[0.06, 0.05, 0.08]} color={furTip} roughness={0.5} />
-                </group>
-              ))}
-
-            {/* Wings - flat voxel slabs, pivoted at the shoulder so they can beat. */}
-            {s.wings &&
-              [1, -1].map((side, i) => (
-                <group
-                  key={side}
-                  ref={(el) => (wingRefs.current[i] = el)}
-                  position={[side * s.body.size[0] * 0.45, s.body.y + s.body.size[1] * 0.36, s.body.z - s.body.size[2] * 0.1]}
-                >
-                  <Box position={[side * 0.13, 0.02, -0.08]} scale={[0.24, 0.05, 0.26]} color={colors.accent} roughness={0.3} />
-                  <Box position={[side * 0.29, 0.07, -0.17]} scale={[0.16, 0.04, 0.2]} color={colors.belly} roughness={0.3} />
-                  <Spike
-                    position={[side * 0.4, 0.12, -0.24]}
-                    rotation={[0, 0, side * -1.2]}
-                    scale={[0.1, 0.14, 0.1]}
-                    color={colors.accent}
-                  />
-                </group>
-              ))}
-
-            {/* Patches on the coat. */}
-            {pet.spots &&
-              [
-                [s.body.size[0] / 2, s.body.y + 0.04, s.body.z + 0.12, [0.02, 0.13, 0.14]],
-                [-s.body.size[0] / 2, s.body.y - 0.02, s.body.z - 0.14, [0.02, 0.13, 0.14]],
-                [0, s.body.y + s.body.size[1] / 2, s.body.z - 0.2, [0.14, 0.02, 0.13]],
-              ].map(([x, y, z, scale], i) => (
-                <Box key={i} position={[x, y, z]} scale={scale} color={colors.accent} roughness={0.45} shadow={false} />
-              ))}
-
-            {/* A neck, on the species that carry their head up high. */}
-            {s.neck && <Box position={[0, s.neck.y, s.neck.z]} scale={s.neck.size} color={colors.body} />}
-
-            {/* Collar - a flat voxel band, with a little tag hanging off the front. */}
-            <Box position={[0, collar.y, collar.z]} scale={collar.size} color={colors.accent} roughness={0.35} />
-            <mesh
-              position={[0, collar.y - 0.07, collar.z + collar.size[2] / 2 - 0.02]}
-              rotation={[0, 0, Math.PI / 4]}
-              scale={0.05}
-              castShadow
-            >
-              <boxGeometry args={[1, 1, 0.3]} />
-              <meshStandardMaterial color="#ffe066" roughness={0.2} metalness={0.3} flatShading />
-            </mesh>
-
-            {/* Head, and everything that hangs off it. */}
-            <group ref={headRef} position={[0, s.head.y, s.head.z]}>
-              <Box scale={s.head.size} color={colors.body} />
-              {/* Pale face plate, standing just proud of the front of the cube. */}
-              <Box
-                position={[0, -s.head.size[1] * 0.08, headHalf + 0.005 - (s.head.size[2] * 0.42) / 2]}
-                scale={[s.head.size[0] * 0.86, s.head.size[1] * 0.72, s.head.size[2] * 0.42]}
-                color={colors.belly}
-                roughness={0.5}
-              />
+        {/* The head: nods about the neck. */}
+        <group position={NECK}>
+          <group ref={headRef}>
+            <group position={[0, HEAD.y - NECK[1], HEAD.z - NECK[2]]}>
+              <Part scale={[HEAD.r, HEAD.r * 0.94, HEAD.r * 0.92]} color={colors.body} glow={skinGlow} />
               {/* Muzzle and nose. */}
-              <Box
-                position={[0, -s.head.size[1] * 0.14, snoutZ]}
-                scale={s.snout.size}
-                color={colors.belly}
-                roughness={0.5}
-              />
-              <Box
-                position={[0, -s.head.size[1] * 0.08, noseZ]}
-                scale={[s.snout.size[0] * 0.45, s.snout.size[1] * 0.4, 0.05]}
-                color={shade(colors.eye, -0.2)}
-                roughness={0.3}
-              />
-              {/* Fangs poking out of the jaw. */}
-              {s.fangs &&
-                [1, -1].map((side) => (
-                  <Spike
-                    key={side}
-                    position={[side * s.snout.size[0] * 0.28, -s.head.size[1] * 0.26, snoutZ + s.snout.size[2] * 0.2]}
-                    rotation={[Math.PI, 0, 0]}
-                    scale={[0.035, 0.08, 0.035]}
-                    color="#ffffff"
-                  />
-                ))}
-              {/* Whiskers */}
-              {s.whiskers &&
-                [1, -1].flatMap((side) =>
-                  [-0.04, 0.03].map((dy, i) => (
-                    <Box
-                      key={`${side}-${i}`}
-                      position={[side * s.head.size[0] * 0.42, -s.head.size[1] * 0.12 + dy, faceZ - 0.02]}
-                      rotation={[0, 0, side * 0.12]}
-                      scale={[0.16, 0.012, 0.012]}
-                      color="#ffffff"
-                      roughness={0.4}
-                      shadow={false}
-                    />
-                  )),
-                )}
-              {/* Cheek tufts, for the fluffier species. */}
-              {s.ruff >= 0.5 &&
-                [1, -1].map((side) => (
-                  <Spike
-                    key={side}
-                    position={[side * s.head.size[0] * 0.52, -s.head.size[1] * 0.1, -0.02]}
-                    rotation={[0, 0, side * 1.35]}
-                    scale={[0.08, 0.17, 0.08]}
-                    color={colors.belly}
-                  />
-                ))}
-              {/* Blush - a flat pixel square on the side of each cheek, where no
-                  muzzle can ever swallow it. */}
-              {[1, -1].map((side) => (
-                <mesh
-                  key={side}
-                  position={[side * (s.head.size[0] / 2 + 0.005), eyeY - 0.07, faceZ - 0.06]}
-                  scale={[0.01, 0.05, 0.075]}
-                  geometry={unitBox()}
-                >
-                  <meshStandardMaterial color={colors.accent} transparent opacity={0.55} roughness={0.6} flatShading />
-                </mesh>
-              ))}
-              {/* Eyes - blocky pixels with a highlight square each. */}
-              {[1, -1].map((side) => (
-                <group key={side} position={[side * eyeX, eyeY, faceZ]}>
-                  <mesh scale={[0.075, 0.09, 0.03]} geometry={unitBox()}>
-                    <meshStandardMaterial color={colors.eye} roughness={0.15} flatShading />
-                  </mesh>
-                  <mesh position={[0.018, 0.022, 0.02]} scale={[0.028, 0.03, 0.02]} geometry={unitBox()}>
-                    <meshStandardMaterial color="#ffffff" roughness={0.1} flatShading />
-                  </mesh>
+              <Part position={[0, -0.08, 0.2 + snout * 0.04]} scale={[0.11 + snout * 0.04, 0.08, 0.06 + snout * 0.06]} color={colors.belly} glow={skinGlow} shadow={false} />
+              <Part position={[0, -0.05, 0.26 + snout * 0.09]} scale={[0.038, 0.028, 0.025]} color="#2a1a1f" roughness={0.25} shadow={false} />
+              {/* Eyes: big, glossy, each with its highlight. */}
+              {[1, -1].map((side, i) => (
+                <group key={side} position={[side * 0.1, 0.03, 0.22]} ref={(el) => (eyeRefs.current[i] = el)}>
+                  <Part scale={[0.055, 0.07, 0.04]} color={eyeColor} roughness={0.15} shadow={false} />
+                  <Part position={[side * -0.012 + 0.015, 0.03, 0.03]} scale={[0.02, 0.02, 0.012]} color="#ffffff" roughness={0.1} shadow={false} />
                 </group>
               ))}
-
-              {/* The horn, and the antlers, both sprouting from the top of the head. */}
-              {s.horn && (
-                <>
-                  <Spike position={[0, headTop + 0.16, 0.06]} scale={[0.07, 0.34, 0.07]} color={colors.accent} shadow />
-                  <Box position={[0, headTop + 0.08, 0.06]} scale={[0.09, 0.04, 0.09]} color={colors.belly} roughness={0.3} />
-                </>
-              )}
+              {/* Rosy cheeks. */}
+              {[1, -1].map((side) => (
+                <Part key={side} position={[side * 0.17, -0.07, 0.17]} rotation={[0, side * 0.6, 0]} scale={[0.045, 0.028, 0.01]} color="#ff8fb0" shadow={false} />
+              ))}
+              {s.whiskers &&
+                [1, -1].map((side) => (
+                  <Part
+                    key={side}
+                    kind="capsule"
+                    position={[side * 0.17, -0.07, 0.24]}
+                    rotation={[0, 0, Math.PI / 2 + side * 0.1]}
+                    scale={[0.006, 0.07, 0.006]}
+                    color="#2a1a1f"
+                    shadow={false}
+                  />
+                ))}
+              {/* The boxer's headband, its tails flying out behind. */}
+              <Part kind="ring" position={[0, 0.1, -0.01]} rotation={[Math.PI / 2 - 0.15, 0, 0]} scale={[0.262, 0.262, 0.262]} color={GLOVE} roughness={0.5} shadow={false} />
+              {[1, -1].map((side) => (
+                <Part
+                  key={side}
+                  kind="capsule"
+                  position={[side * 0.04, 0.06, -0.3]}
+                  rotation={[-1.1, side * 0.4, 0]}
+                  scale={[0.022, 0.06, 0.012]}
+                  color={GLOVE}
+                  shadow={false}
+                />
+              ))}
+              <Ears kind={s.ears} colors={colors} glow={skinGlow} earRefs={earRefs} />
               {s.antlers &&
                 [1, -1].map((side) => (
-                  <group key={side} position={[side * s.head.size[0] * 0.3, headTop, -0.02]}>
-                    <Box position={[0, 0.16, 0]} rotation={[0, 0, side * -0.2]} scale={[0.05, 0.32, 0.05]} color={colors.accent} />
-                    <Box position={[side * 0.11, 0.26, 0]} rotation={[0, 0, side * -0.9]} scale={[0.045, 0.18, 0.045]} color={colors.accent} />
-                    <Box position={[side * 0.06, 0.38, -0.06]} rotation={[0.5, 0, side * -0.4]} scale={[0.04, 0.16, 0.04]} color={colors.accent} />
+                  <group key={side} position={[side * 0.1, 0.24, -0.03]} rotation={[0, 0, side * -0.35]}>
+                    <Part kind="capsule" position={[0, 0.1, 0]} scale={[0.02, 0.1, 0.02]} color={colors.accent} glow={skinGlow} />
+                    <Part kind="capsule" position={[side * 0.05, 0.14, 0]} rotation={[0, 0, side * -0.9]} scale={[0.016, 0.05, 0.016]} color={colors.accent} glow={skinGlow} />
                   </group>
                 ))}
-
-              {/* Ears. Each pair is collected into earRefs so they can swing and flick. */}
-              {s.ears === 'long' &&
-                [1, -1].map((side, i) => (
-                  <group
-                    key={side}
-                    ref={(el) => (earRefs.current[i] = el)}
-                    position={[side * s.head.size[0] * 0.38, headTop, -0.02]}
-                    rotation={[0.1, 0, side * -0.1]}
-                  >
-                    <Box position={[0, 0.22, 0]} scale={[0.11, 0.46, 0.08]} color={colors.body} />
-                    <Box position={[0, 0.2, 0.045]} scale={[0.06, 0.36, 0.02]} color={colors.accent} roughness={0.55} shadow={false} />
-                  </group>
-                ))}
-              {s.ears === 'floppy' &&
-                [1, -1].map((side, i) => (
-                  <group
-                    key={side}
-                    ref={(el) => (earRefs.current[i] = el)}
-                    position={[side * s.head.size[0] * 0.56, headTop * 0.7, -0.01]}
-                    rotation={[0.2, 0, side * -0.3]}
-                  >
-                    <Box position={[0, -0.15, 0]} scale={[0.1, 0.3, 0.09]} color={colors.accent} roughness={0.5} />
-                    <Box position={[0, -0.17, 0.05]} scale={[0.055, 0.22, 0.02]} color={shade(colors.accent, -0.3)} roughness={0.55} shadow={false} />
-                  </group>
-                ))}
-              {s.ears === 'cat' &&
-                [1, -1].map((side, i) => (
-                  <group
-                    key={side}
-                    ref={(el) => (earRefs.current[i] = el)}
-                    position={[side * s.head.size[0] * 0.32, headTop, -0.01]}
-                    rotation={[0, 0, side * -0.12]}
-                  >
-                    <Spike position={[0, 0.07, 0]} scale={[0.11, 0.17, 0.07]} color={colors.body} shadow />
-                    <Spike position={[0, 0.05, 0.03]} scale={[0.06, 0.11, 0.03]} color={colors.accent} />
-                  </group>
-                ))}
-              {s.ears === 'fox' &&
-                [1, -1].map((side, i) => (
-                  <group
-                    key={side}
-                    ref={(el) => (earRefs.current[i] = el)}
-                    position={[side * s.head.size[0] * 0.34, headTop, -0.02]}
-                    rotation={[0, 0, side * -0.18]}
-                  >
-                    <Spike position={[0, 0.14, 0]} scale={[0.14, 0.32, 0.1]} color={colors.body} shadow />
-                    <Spike position={[0, 0.11, 0.04]} scale={[0.08, 0.22, 0.04]} color={colors.belly} />
-                  </group>
-                ))}
-              {s.ears === 'wolf' &&
-                [1, -1].map((side, i) => (
-                  <group
-                    key={side}
-                    ref={(el) => (earRefs.current[i] = el)}
-                    position={[side * s.head.size[0] * 0.32, headTop, -0.03]}
-                    rotation={[0, 0, side * -0.1]}
-                  >
-                    <Spike position={[0, 0.12, 0]} scale={[0.11, 0.28, 0.09]} color={colors.body} shadow />
-                    <Spike position={[0, 0.09, 0.035]} scale={[0.06, 0.18, 0.04]} color={furTip} />
-                  </group>
-                ))}
-              {s.ears === 'round' &&
-                [1, -1].map((side, i) => (
-                  <group
-                    key={side}
-                    ref={(el) => (earRefs.current[i] = el)}
-                    position={[side * s.head.size[0] * 0.38, headTop * 0.85, -0.02]}
-                  >
-                    <Box scale={[0.15, 0.15, 0.08]} color={colors.body} />
-                    <Box position={[0, -0.01, 0.045]} scale={[0.085, 0.085, 0.03]} color={colors.accent} roughness={0.5} shadow={false} />
-                  </group>
-                ))}
-              {s.ears === 'deer' &&
-                [1, -1].map((side, i) => (
-                  <group
-                    key={side}
-                    ref={(el) => (earRefs.current[i] = el)}
-                    position={[side * s.head.size[0] * 0.5, headTop * 0.5, -0.02]}
-                    rotation={[0, side * 0.3, side * -0.9]}
-                  >
-                    <Box position={[side * 0.1, 0, 0]} scale={[0.19, 0.09, 0.07]} color={colors.body} />
-                    <Box position={[side * 0.11, 0, 0.04]} scale={[0.13, 0.05, 0.02]} color={colors.belly} roughness={0.55} shadow={false} />
-                  </group>
-                ))}
-              {s.ears === 'horse' &&
-                [1, -1].map((side, i) => (
-                  <group
-                    key={side}
-                    ref={(el) => (earRefs.current[i] = el)}
-                    position={[side * s.head.size[0] * 0.44, headTop, -0.06]}
-                    rotation={[0, 0, side * -0.2]}
-                  >
-                    <Spike position={[0, 0.09, 0]} scale={[0.08, 0.2, 0.07]} color={colors.body} shadow />
-                    <Spike position={[0, 0.07, 0.03]} scale={[0.045, 0.13, 0.03]} color={colors.belly} />
-                  </group>
-                ))}
-              {s.ears === 'horns' &&
-                [1, -1].map((side, i) => (
-                  <group
-                    key={side}
-                    ref={(el) => (earRefs.current[i] = el)}
-                    position={[side * s.head.size[0] * 0.34, headTop * 0.8, -0.08]}
-                    rotation={[-0.5, 0, side * -0.5]}
-                  >
-                    <Box position={[0, 0.1, 0]} scale={[0.07, 0.2, 0.07]} color={colors.accent} />
-                    <Spike position={[0, 0.24, 0]} rotation={[0, 0, side * -0.3]} scale={[0.06, 0.16, 0.06]} color={colors.belly} shadow />
-                  </group>
-                ))}
-            </group>
-
-            {/* Tail - a pivot group at the base, so it can wag. */}
-            <group position={tailBase} ref={tailRef}>
-              {s.tail === 'puff' && (
-                <>
-                  <Box position={[0, 0.02, -0.08]} scale={[0.16, 0.16, 0.14]} color={colors.body} />
-                  <Box position={[0, 0.06, -0.2]} scale={[0.22, 0.22, 0.16]} color={colors.belly} roughness={0.5} />
-                </>
+              {s.horn && (
+                <Part kind="cone" position={[0, 0.24, 0.14]} rotation={[0.5, 0, 0]} scale={[0.045, 0.2, 0.045]} color="#ffd23f" glow={0.5} roughness={0.2} />
               )}
-              {s.tail === 'wag' && (
-                <>
-                  <Box position={[0, 0.06, -0.1]} scale={[0.11, 0.11, 0.2]} color={colors.body} />
-                  <Box position={[0, 0.2, -0.2]} scale={[0.09, 0.2, 0.12]} color={colors.body} />
-                  <Box position={[0, 0.32, -0.24]} scale={[0.08, 0.12, 0.09]} color={furTip} roughness={0.5} />
-                </>
-              )}
-              {s.tail === 'long' && (
-                <>
-                  <Box position={[0, 0.04, -0.1]} scale={[0.09, 0.09, 0.2]} color={colors.body} />
-                  <Box position={[0, 0.16, -0.22]} scale={[0.08, 0.22, 0.09]} color={colors.body} />
-                  <Box position={[0, 0.3, -0.28]} scale={[0.075, 0.12, 0.16]} color={colors.body} />
-                  <Box position={[0, 0.34, -0.4]} scale={[0.07, 0.07, 0.12]} color={furTip} roughness={0.5} />
-                </>
-              )}
-              {s.tail === 'heavy' && (
-                <>
-                  <Box position={[0, -0.02, -0.16]} scale={[0.26, 0.26, 0.32]} color={colors.body} />
-                  <Box position={[0, -0.1, -0.44]} scale={[0.19, 0.19, 0.28]} color={colors.body} />
-                  <Box position={[0, -0.17, -0.66]} scale={[0.12, 0.12, 0.2]} color={furTip} roughness={0.5} />
-                </>
-              )}
-              {s.tail === 'bush' && (
-                <>
-                  <Box position={[0, 0.03, -0.14]} scale={[0.24, 0.22, 0.26]} color={colors.body} />
-                  <Box position={[0, 0.09, -0.36]} scale={[0.3, 0.28, 0.24]} color={colors.accent} roughness={0.45} />
-                  <Box position={[0, 0.15, -0.54]} scale={[0.24, 0.22, 0.16]} color={colors.belly} roughness={0.5} />
-                </>
-              )}
-              {s.tail === 'brush' && (
-                <>
-                  <Box position={[0, 0.04, -0.14]} scale={[0.16, 0.16, 0.26]} color={colors.body} />
-                  <Box position={[0, 0.1, -0.36]} scale={[0.2, 0.2, 0.26]} color={colors.body} />
-                  <Box position={[0, 0.16, -0.54]} scale={[0.14, 0.14, 0.16]} color={furTip} roughness={0.5} />
-                </>
-              )}
-              {s.tail === 'spade' && (
-                <>
-                  <Box position={[0, 0.0, -0.14]} scale={[0.14, 0.14, 0.26]} color={colors.body} />
-                  <Box position={[0, 0.04, -0.34]} scale={[0.11, 0.11, 0.22]} color={colors.body} />
-                  <Spike
-                    position={[0, 0.08, -0.5]}
-                    rotation={[-Math.PI / 2, 0, Math.PI / 4]}
-                    scale={[0.14, 0.2, 0.14]}
-                    color={colors.accent}
-                    shadow
-                  />
-                </>
-              )}
-              {s.tail === 'stub' && <Box position={[0, 0.02, -0.08]} scale={[0.14, 0.14, 0.12]} color={colors.body} />}
-              {s.tail === 'flick' && (
-                <>
-                  <Box position={[0, 0.08, -0.06]} scale={[0.09, 0.16, 0.09]} color={colors.body} />
-                  <Box position={[0, 0.18, -0.06]} scale={[0.11, 0.1, 0.07]} color={colors.belly} roughness={0.5} />
-                </>
-              )}
-              {s.tail === 'flow' &&
-                [-1, 0, 1].map((i) => (
-                  <Box
+              {s.mane &&
+                [0, 1, 2, 3].map((i) => (
+                  <Part
                     key={i}
-                    position={[i * 0.08, -0.06 - Math.abs(i) * 0.04, -0.16 - Math.abs(i) * 0.03]}
-                    rotation={[0.25, 0, i * 0.18]}
-                    scale={[0.11, 0.42 - Math.abs(i) * 0.08, 0.14]}
-                    color={i === 0 ? colors.accent : colors.belly}
-                    roughness={0.45}
-                  />
-                ))}
-              {/* Fur flaring off the tail, matching the spine. */}
-              {s.ruff >= 0.7 &&
-                [1, -1].map((side) => (
-                  <Spike
-                    key={side}
-                    position={[side * 0.13, 0.06, -0.26]}
-                    rotation={[0, 0, side * 1.25]}
-                    scale={[0.07, 0.15, 0.07]}
-                    color={colors.belly}
+                    position={[0, 0.22 - i * 0.07, -0.18 - i * 0.03]}
+                    scale={[0.07, 0.07, 0.07]}
+                    color={[colors.accent, colors.belly, '#ffffff', colors.accent][i]}
+                    glow={skinGlow}
                   />
                 ))}
             </group>
           </group>
         </group>
+
+        {/* A gem floating over the very best. */}
+        {glow >= 0.75 && (
+          <mesh position={[0, 1.18, HEAD.z]} rotation={[0, Math.PI / 4, 0]} scale={0.06}>
+            <octahedronGeometry args={[1, 0]} />
+            <meshStandardMaterial color="#ffffff" emissive={colors.accent} emissiveIntensity={0.9} roughness={0.1} metalness={0.4} />
+          </mesh>
+        )}
       </group>
-    </GlowContext.Provider>
+    </group>
   )
 }
 

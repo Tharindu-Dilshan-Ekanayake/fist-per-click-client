@@ -5,16 +5,18 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
 import { useBloxity } from '../bloxity/BloxityContext'
 import FollowCamera from './FollowCamera'
+import { useGame } from './gameStore'
 import { useLoading } from './loadingStore'
 import NetSync from './NetSync'
 import PetCompanion from './PetCompanion'
 import Footprints from './Footprints'
 import Player from './Player'
+import PunchEffects from './PunchEffects'
+import PunchInput from './PunchInput'
 import RemotePlayers from './RemotePlayers'
+import RingDirector from './RingDirector'
 import { qualityOf, useSettings } from './settings'
-import ShootInput from './ShootInput'
-import ShotEffects from './ShotEffects'
-import { BOSS_SPAWN, SPACE_SPAWN, SPAWN } from './world/themes'
+import { SPACE_SPAWN, SPAWN } from './world/themes'
 import { refreshMaterials } from './world/nearField'
 import World, { SunLight } from './world/World'
 
@@ -125,15 +127,37 @@ function LocalEnvironment() {
 }
 
 /**
- * Development only: `?at=boss` or `?at=space` starts you in the Boss Arena or Space
- * World, so either can be checked without rebirthing first. Production builds
+ * Development only: `?at=space` starts you in Space World, so it can be checked
+ * without rebirthing first. Production builds
  * always start in the lobby.
  */
 const START = (() => {
   if (!import.meta.env.DEV) return SPAWN
   const at = new URLSearchParams(location.search).get('at')
-  return { boss: BOSS_SPAWN, space: SPACE_SPAWN }[at] ?? SPAWN
+  return { space: SPACE_SPAWN }[at] ?? SPAWN
 })()
+
+/**
+ * Development only: `window.__fpc` - the game store and a way to move the player -
+ * for poking at the game from the browser console (and the screenshot scripts).
+ */
+function DevHandle({ bodyRef }) {
+  useEffect(() => {
+    if (!import.meta.env.DEV) return undefined
+    window.__fpc = {
+      useGame,
+      teleport: (x, y, z) => {
+        bodyRef.current?.setTranslation({ x, y, z }, true)
+        bodyRef.current?.setLinvel({ x: 0, y: 0, z: 0 }, true)
+      },
+      where: () => bodyRef.current?.translation(),
+    }
+    return () => {
+      delete window.__fpc
+    }
+  }, [bodyRef])
+  return null
+}
 
 export function GameScene({ bodyRef: externalBodyRef }) {
   const { game } = useBloxity()
@@ -229,17 +253,19 @@ export function GameScene({ bodyRef: externalBodyRef }) {
           <Footprints />
           <PetCompanion bodyRef={playerBodyRef} anchorRef={playerAnchorRef} />
           {/* The other players in our lobby, and sending ours (after each physics step). */}
-          <RemotePlayers />
+          <RemotePlayers bodyRef={playerBodyRef} />
+          <RingDirector bodyRef={playerBodyRef} />
           <NetSync bodyRef={playerBodyRef} />
           {/* Inside Physics: the camera raycasts against the world so it can't be
               pushed through a stage wall. It no-ops until the player body exists. */}
           <FollowCamera bodyRef={playerBodyRef} anchorRef={playerAnchorRef} />
-          <ShotEffects bodyRef={playerBodyRef} anchorRef={playerAnchorRef} />
+          <PunchEffects bodyRef={playerBodyRef} anchorRef={playerAnchorRef} />
         </Physics>
       </Suspense>
 
-      <ShootInput bodyRef={playerBodyRef} />
+      <PunchInput bodyRef={playerBodyRef} />
       <FirstFrameSignal onFirstFrame={handleFirstFrame} />
+      <DevHandle bodyRef={playerBodyRef} />
     </Canvas>
   )
 }

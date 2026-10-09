@@ -101,23 +101,23 @@ export function readTurn() {
 }
 
 /**
- * Shots asked for by something that does not know where the player is - the
- * on-screen fire button, and a tap on the view.
+ * Punches asked for by something that does not know where the player is - the
+ * on-screen punch button, and a tap on the view.
  *
- * Queued rather than fired, because a shot needs the player's position (a stage
+ * Queued rather than thrown, because a punch needs the player's position (a stage
  * wall uses it to tell which side it was hit from) and the popup needs them on
- * screen, and only the frame loop has either. ShootInput drains this each frame.
+ * screen, and only the frame loop has either. PunchInput drains this each frame.
  */
-let pendingShots = 0
+let pendingPunches = 0
 
-export const requestShot = () => {
+export const requestPunch = () => {
   // A finger can out-run the frame rate; anything past a couple in one frame is
-  // noise, and letting it build up would keep firing after the tapping stopped.
-  pendingShots = Math.min(pendingShots + 1, 2)
+  // noise, and letting it build up would keep punching after the tapping stopped.
+  pendingPunches = Math.min(pendingPunches + 1, 2)
 }
 
-export function takeShots() {
-  const n = pendingShots
-  pendingShots = 0
+export function takePunches() {
+  const n = pendingPunches
+  pendingPunches = 0
   return n
 }

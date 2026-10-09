@@ -7,7 +7,7 @@ import { GATE_Z } from './themes'
 
 const SIZE = [13, 3]
 const POSITION = [0, 12, GATE_Z + 0.12]
-const STYLE = { fill: ['#fff6a8', '#ffc21a'], bg: '#15151c', border: '#ffc21a' }
+const STYLE = { fill: ['#fff6a8', '#ffc21a'], bg: '#3a0d14', border: '#ffd23f' }
 const COUNTDOWN_FILL = '#ffb347'
 
 /**

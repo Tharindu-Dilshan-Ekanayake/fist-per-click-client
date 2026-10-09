@@ -67,8 +67,8 @@ canvas {
 }
 
 /*
- * "+N Ammo" click popup: pops up at the click with a little twist (--rot), rises,
- * then accelerates into the Ammo counter (--dx/--dy away). Keep the duration in sync
+ * "+N Strength" click popup: pops up at the click with a little twist (--rot), rises,
+ * then accelerates into the Strength counter (--dx/--dy away). Keep the duration in sync
  * with POPUP_MS in gameStore.js.
  */
 @keyframes click-popup {
@@ -98,7 +98,7 @@ canvas {
   filter: drop-shadow(0 0 10px rgba(255, 200, 60, 0.55));
 }
 
-/* Ammo counter bounce on every gain. */
+/* Strength counter bounce on every gain. */
 @keyframes power-bump {
   0% {
     transform: scale(1);
@@ -120,7 +120,7 @@ canvas {
 /*
  * The rebirth moment.
  *
- * Giving up all your Ammo is the largest thing a player ever does in this
+ * Giving up all your Strength is the largest thing a player ever does in this
  * game, and it used to look like the smallest: a line of toast, the same as running
  * out of Wins. The flash is what makes the trade land - a burst of light, the new
  * multiplier held for a beat, and then back to a counter reading zero.
@@ -201,7 +201,7 @@ canvas {
   animation: prompt-pop 0.18s ease-out;
 }
 
-/* Loading screen: the gun fires and kicks, stripes slide along the bar, tips fade in. */
+/* Loading screen: the glove punches, stripes slide along the bar, tips fade in. */
 @keyframes loading-swing {
   0%,
   60%,
@@ -298,12 +298,44 @@ canvas {
   transform-origin: left;
   animation: notice-timer 2.4s linear forwards;
 }
-@keyframes boss-hit-flash {
-  0% { box-shadow: inset 0 0 0 0 rgba(255, 35, 22, 0); }
-  18% { box-shadow: inset 0 0 90px 28px rgba(255, 35, 22, 0.62); }
-  100% { box-shadow: inset 0 0 0 0 rgba(255, 35, 22, 0); }
+/*
+ * The boxing rings (ui/RingHUD.jsx): the countdown numbers, "FIGHT!" and the
+ * knockout slam in big and settle, and taking a punch flashes the edges of the
+ * screen red. Transform and opacity only, so neither costs the game a frame.
+ */
+@keyframes ring-shout {
+  0% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+  18% {
+    transform: scale(0.92);
+    opacity: 1;
+  }
+  30% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
-.boss-hit-flash {
-  animation: boss-hit-flash 0.45s ease-out both;
+.ring-shout {
+  animation: ring-shout 0.6s ease-out forwards;
+  letter-spacing: 0.04em;
+}
+
+@keyframes ring-hurt {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.ring-hurt {
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 30, 30, 0.55) 100%);
+  animation: ring-hurt 0.45s ease-out forwards;
 }

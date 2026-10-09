@@ -2,8 +2,8 @@
 #
 # Needs, in this repo's GitHub settings first:
 #   Settings -> Secrets and variables -> Actions -> Secrets   -> LEGION_DEPLOY_TOKEN
-#   Settings -> Secrets and variables -> Actions -> Variables -> LEGION_GAME_ID
-#                                                              -> VITE_GAME_SLUG
+# and, optionally, Variables -> LEGION_GAME_ID and VITE_GAME_SLUG (both default to
+# 1-fist-per-click).
 #
 # LEGION_DEPLOY_TOKEN is the same token the server repo deploys with (My Games, behind
 # the eye icon). LEGION_GAME_ID is the hosting id; VITE_GAME_SLUG is the slug the game
@@ -31,13 +31,9 @@ jobs:
       - name: Check the repo settings
         env:
           TOKEN: ${{ secrets.LEGION_DEPLOY_TOKEN }}
-          GAME_ID: ${{ vars.LEGION_GAME_ID }}
-          SLUG: ${{ vars.VITE_GAME_SLUG }}
         run: |
           missing=""
           [ -n "$TOKEN" ] || missing="$missing secret LEGION_DEPLOY_TOKEN,"
-          [ -n "$GAME_ID" ] || missing="$missing variable LEGION_GAME_ID,"
-          [ -n "$SLUG" ] || missing="$missing variable VITE_GAME_SLUG,"
           if [ -n "$missing" ]; then
             echo "::error::Missing in Settings -> Secrets and variables -> Actions:$missing"
             exit 1
@@ -64,8 +60,8 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_GAME_SLUG: ${{ vars.VITE_GAME_SLUG }}
-          VITE_HOSTING_ID: ${{ vars.LEGION_GAME_ID }}
+          VITE_GAME_SLUG: ${{ vars.VITE_GAME_SLUG || '1-fist-per-click' }}
+          VITE_HOSTING_ID: ${{ vars.LEGION_GAME_ID || '1-fist-per-click' }}
           VITE_CHANNEL: ${{ steps.plan.outputs.channel }}
 
       # The zip holds the build's files at its top level, not inside a dist/ folder.
@@ -75,7 +71,7 @@ jobs:
       - name: Upload to Bloxity
         run: |
           curl --fail-with-body -sS -X POST \
-            "https://api.bloxity.io/v1/hosting/games/${{ vars.LEGION_GAME_ID }}/frontend?channel=${{ steps.plan.outputs.channel }}&version=${{ github.sha }}" \
+            "https://api.bloxity.io/v1/hosting/games/${{ vars.LEGION_GAME_ID || '1-fist-per-click' }}/frontend?channel=${{ steps.plan.outputs.channel }}&version=${{ github.sha }}" \
             -H "Authorization: Bearer ${{ secrets.LEGION_DEPLOY_TOKEN }}" \
             -H "Content-Type: application/zip" \
             --data-binary @build.zip

@@ -10,7 +10,7 @@ const ROWS = [
   ['A  D', 'turn the camera'],
   ['Space', 'jump'],
   ['Shift', 'sprint'],
-  ['Left-click', 'shoot / hit walls / hit the boss'],
+  ['Left-click', 'punch / smash walls / fight in the rings'],
   ['E', 'buy / unlock / equip / open'],
   ['Hold E', 'cash in at a Win pad'],
   ['Right-drag', 'turn the camera'],
@@ -20,6 +20,7 @@ const ROWS = [
   ['R', 'open / close Rebirth'],
   ['B', 'open / close Shop'],
   ['C', 'open / close Controls'],
+  ['G', 'open / close the Guide'],
 ]
 
 const INK = '#1b1b25'

@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { useBossFight } from '../game/bossFight'
 import { useTouchDevice } from '../game/device'
 import { formatBonus, formatNumber } from '../game/format'
 import { AUTO_WINS_S, powerMultiplier, useGame, winsMultiplier } from '../game/gameStore'
 import {
   activeBoost,
   BOOSTS,
-  levelAmmo,
   levelFor,
+  levelStrength,
   MAX_LEVEL,
   rebirthMultiplier,
   WALK_SPEED,
@@ -16,6 +15,8 @@ import {
 import { playSound } from '../game/sound'
 import { getTrainer } from '../game/trainers'
 import { ControlsButton, ControlsPanel } from './Controls'
+import { GuideButton } from './HowToPlay'
+import { RingHUD } from './RingHUD'
 import { PetsButton, PetsPanel } from './PetsPanel'
 import { RebirthButton, RebirthIcon, RebirthPanel } from './RebirthPanel'
 import { PromoStack, ShopButton, ShopPanel } from './ShopPanel'
@@ -46,10 +47,10 @@ const BOOST_COLORS = {
 // --- Icons: drawn in the same outlined style as the signs, not emoji -----------------
 
 /**
- * Two rounds of ammunition, copper tips on brass cases - the game's currency, drawn
- * the way the reference game draws it. Same chunky outline as every other icon here.
+ * A red boxing glove on a white cuff - the game's Strength, drawn the way the signs
+ * in the world draw it. Same chunky outline as every other icon here.
  */
-export function AmmoIcon({ className = 'h-[1.3em] w-[1.3em]', style }) {
+export function FistIcon({ className = 'h-[1.3em] w-[1.3em]', style }) {
   return (
     <svg
       viewBox="0 0 100 100"
@@ -58,24 +59,19 @@ export function AmmoIcon({ className = 'h-[1.3em] w-[1.3em]', style }) {
       style={{ ...ICON_SHADOW, ...style }}
     >
       <defs>
-        <linearGradient id="hud-brass" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#fff3a0" />
-          <stop offset="0.5" stopColor="#ffc21a" />
-          <stop offset="1" stopColor="#c88400" />
-        </linearGradient>
-        <linearGradient id="hud-copper" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#ffd1a0" />
-          <stop offset="1" stopColor="#e0702a" />
+        <linearGradient id="hud-glove" x1="0.1" y1="0" x2="0.9" y2="0.9">
+          <stop offset="0" stopColor="#ff9a88" />
+          <stop offset="0.5" stopColor="#f0302a" />
+          <stop offset="1" stopColor="#b0140f" />
         </linearGradient>
       </defs>
-      <g stroke={INK} strokeWidth="6" strokeLinejoin="round">
-        <path d="M21 44 Q21 14 36 6 Q51 14 51 44 Z" fill="url(#hud-copper)" />
-        <rect x="21" y="44" width="30" height="46" fill="url(#hud-brass)" />
-        <rect x="18" y="84" width="36" height="9" fill="url(#hud-brass)" />
-        <path d="M52 58 Q52 30 66 23 Q80 30 80 58 Z" fill="url(#hud-copper)" />
-        <rect x="52" y="58" width="28" height="32" fill="url(#hud-brass)" />
-        <rect x="49" y="84" width="34" height="9" fill="url(#hud-brass)" />
+      <g stroke={INK} strokeWidth="7" strokeLinejoin="round">
+        <rect x="28" y="66" width="46" height="28" rx="6" fill="#f4f4f4" />
+        <path d="M30 70 C16 58 14 26 34 12 C50 2 78 4 86 22 C95 40 90 62 74 70 Z" fill="url(#hud-glove)" />
+        <ellipse cx="31" cy="47" rx="12" ry="17" transform="rotate(-14 31 47)" fill="url(#hud-glove)" />
       </g>
+      <rect x="31.5" y="74" width="39" height="8" fill="#ffd23f" />
+      <ellipse cx="62" cy="22" rx="14" ry="6" transform="rotate(-20 62 22)" fill="rgba(255,255,255,0.5)" />
     </svg>
   )
 }
@@ -257,9 +253,9 @@ function Notice({ message }) {
 }
 
 /**
- * "+N" popups with the Ammo icon: each pops up where the shot was fired with a little
- * twist, then flies into the Ammo counter. Half size on a phone, where forty of them
- * a second would otherwise cover the player.
+ * "+N" popups with the fist icon: each pops up where the punch was thrown with a
+ * little twist, then flies into the Strength counter. Half size on a phone, where
+ * forty of them a second would otherwise cover the player.
  */
 function ClickPopups() {
   const popups = useGame((s) => s.popups)
@@ -279,7 +275,7 @@ function ClickPopups() {
         '--rot': `${((p.id % 5) - 2) * 9}deg`,
       }}
     >
-      <AmmoIcon className={touch ? 'h-6 w-6' : 'h-11 w-11'} />
+      <FistIcon className={touch ? 'h-6 w-6' : 'h-11 w-11'} />
       <span>+{formatNumber(p.gain)}</span>
     </div>
   ))
@@ -299,88 +295,6 @@ function AutoWinsTicker() {
     return () => clearInterval(id)
   }, [on])
   return null
-}
-
-/** Seconds as "0:42". */
-const clock = (s) => `${Math.floor(s / 60)}:${String(Math.max(0, Math.floor(s % 60))).padStart(2, '0')}`
-
-/**
- * The boss's health and clock across the top, while you are in its arena. The boss
- * wears the same over its head, but up there it is often off the top of the screen.
- */
-function BossBar() {
-  const inArena = useGame((s) => s.inBossArena)
-  const fight = useBossFight()
-  const touch = useTouchDevice()
-  const [now, setNow] = useState(() => performance.now())
-  useEffect(() => {
-    if (!inArena) return undefined
-    const id = setInterval(() => setNow(performance.now()), 250)
-    return () => clearInterval(id)
-  }, [inArena])
-  if (!inArena) return null
-  const fraction = Math.max(0, Math.min(1, fight.hp / fight.maxHp))
-  const status =
-    fight.phase === 'down'
-      ? `Next boss in ${Math.max(0, Math.ceil((fight.nextAt - now) / 1000))}s`
-      : fight.phase === 'fighting'
-        ? `⏱ ${clock((fight.endsAt - now) / 1000)}`
-        : 'Shoot it to start the clock!'
-  return (
-    <div
-      className={`pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 ${touch ? 'top-12 w-72' : 'top-16 w-[30rem]'}`}
-      style={OUTLINE}
-    >
-      <div className={`flex items-baseline justify-between text-white ${touch ? 'text-sm' : 'text-2xl'}`}>
-        <span>Boss Lv {fight.level}</span>
-        <span className={fight.phase === 'fighting' && fight.endsAt - now < 10000 ? 'text-red-400' : 'text-yellow-200'}>
-          {status}
-        </span>
-      </div>
-      <div
-        className={`relative mt-1 overflow-hidden rounded-xl border-4 ${touch ? 'h-6' : 'h-9'}`}
-        style={{ borderColor: INK, background: '#3a1010' }}
-      >
-        <div
-          className="absolute inset-y-0 left-0 transition-[width] duration-150"
-          style={{ width: `${fraction * 100}%`, background: 'linear-gradient(to bottom, #ff8a6a, #d62a1a)' }}
-        />
-        <span
-          className={`absolute inset-0 flex items-center justify-center text-white ${touch ? 'text-xs' : 'text-lg'}`}
-        >
-          {formatNumber(fight.hp)} / {formatNumber(fight.maxHp)}
-        </span>
-      </div>
-      <div className={`mt-1 flex items-center justify-between text-white ${touch ? 'text-[10px]' : 'text-sm'}`}>
-        <span>YOU</span>
-        <span>{fight.playerHp} / {fight.maxPlayerHp} HP</span>
-      </div>
-      <div
-        className={`relative mt-0.5 overflow-hidden rounded-full border-2 ${touch ? 'h-3' : 'h-4'}`}
-        style={{ borderColor: INK, background: '#241016' }}
-      >
-        <div
-          className="absolute inset-y-0 left-0 transition-[width] duration-200"
-          style={{
-            width: `${Math.max(0, Math.min(1, fight.playerHp / fight.maxPlayerHp)) * 100}%`,
-            background: 'linear-gradient(to bottom, #8aff78, #26a83c)',
-          }}
-        />
-      </div>
-      {fight.playerHitAt > 0 && now - fight.playerHitAt < 450 && (
-        <div className="boss-hit-flash fixed inset-0 z-20 rounded-none" />
-      )}
-      {/* What is coming, big, in the middle - the one thing worth reading mid-fight. */}
-      {fight.phase === 'fighting' && fight.warningUntil > now && fight.warningText && (
-        <div
-          className={`fixed inset-x-0 top-[38%] z-20 animate-pulse text-center text-red-400 ${touch ? 'text-2xl' : 'text-5xl'}`}
-          style={OUTLINE}
-        >
-          {fight.warningText}
-        </div>
-      )}
-    </div>
-  )
 }
 
 /**
@@ -435,11 +349,12 @@ function LeftActionRail() {
       <RebirthButton />
       <ShopButton />
       <ControlsButton />
+      <GuideButton />
     </div>
   )
 }
 
-/** Orange level bar that fills with Ammo; "MAX" once there's nothing left to reach. */
+/** Level bar that fills with Strength; "MAX" once there's nothing left to reach. */
 /**
  * Everything in the bottom panel comes in two sizes.
  *
@@ -461,14 +376,14 @@ const BUTTON_H = (scale) => Math.max(34, Math.round(36 * scale))
 const BOOST_W = (scale) => Math.max(64, Math.round(70 * scale))
 const ICON_PX = (scale) => Math.max(16, Math.round(18 * scale))
 
-function LevelBar({ ammo }) {
+function LevelBar({ strength }) {
   const touch = useTouchDevice()
   const scale = useTouchScale()
-  const level = levelFor(ammo)
+  const level = levelFor(strength)
   const max = level >= MAX_LEVEL
-  const from = levelAmmo(level)
-  const to = levelAmmo(level + 1)
-  const fraction = max ? 1 : Math.min(1, (ammo - from) / (to - from))
+  const from = levelStrength(level)
+  const to = levelStrength(level + 1)
+  const fraction = max ? 1 : Math.min(1, (strength - from) / (to - from))
   return (
     <div
       className={`relative w-full overflow-hidden rounded-xl ${touch ? 'border-2' : 'h-16 border-4'}`}
@@ -495,7 +410,7 @@ function LevelBar({ ammo }) {
         {max ? (
           <span>MAX</span>
         ) : (
-          <span className={touch ? 'text-xs' : 'text-2xl'}>{`${formatNumber(ammo)} / ${formatNumber(to)}`}</span>
+          <span className={touch ? 'text-xs' : 'text-2xl'}>{`${formatNumber(strength)} / ${formatNumber(to)}`}</span>
         )}
       </div>
     </div>
@@ -519,7 +434,7 @@ function BoostButton({ def, now }) {
         className={`flex items-center justify-center text-white ${touch ? 'gap-0.5' : 'gap-2 text-3xl'}`}
         style={touch ? { ...OUTLINE, fontSize: Math.max(13, Math.round(16 * scale)) } : OUTLINE}
       >
-        <AmmoIcon
+        <FistIcon
           className={touch ? '' : 'h-10 w-10'}
           style={touch ? { width: ICON_PX(scale), height: ICON_PX(scale) } : undefined}
         />
@@ -540,8 +455,9 @@ function BoostButton({ def, now }) {
 }
 
 /**
- * The HUD: toasts, click popups, the Wins counter, the shop and its offers, the boss
- * bar, and the bottom panel with Ammo, the level bar and boosts. Also handles E.
+ * The HUD: toasts, click popups, the Wins counter, the shop and its offers, the ring
+ * fight panel, and the bottom panel with Strength, the level bar and
+ * boosts. Also handles E.
  */
 export function GameHUD() {
   const touch = useTouchDevice()
@@ -558,7 +474,7 @@ export function GameHUD() {
     reportStripHeight(el.getBoundingClientRect().height)
     return () => observer.disconnect()
   }, [touch])
-  const ammo = useGame((s) => s.ammo)
+  const strength = useGame((s) => s.strength)
   const rebirths = useGame((s) => s.rebirths)
   const boost = useGame((s) => s.boost)
   const ownedPasses = useGame((s) => s.ownedPasses)
@@ -572,6 +488,7 @@ export function GameHUD() {
       KeyR: () => useGame.getState().toggleRebirthPanel(),
       KeyB: () => useGame.getState().toggleShop(),
       KeyC: () => useGame.getState().toggleControlsPanel(),
+      KeyG: () => useGame.getState().toggleGuide(),
     }
     const onKeyDown = (e) => {
       if (e.repeat || e.altKey || e.ctrlKey || e.metaKey) return
@@ -586,9 +503,9 @@ export function GameHUD() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  const level = levelFor(ammo)
+  const level = levelFor(strength)
   const multiplier =
-    powerMultiplier({ ammo, boost, rebirths, ownedPasses }, now) * (getTrainer(activeTrainer)?.multiplier ?? 1)
+    powerMultiplier({ strength, boost, rebirths, ownedPasses }, now) * (getTrainer(activeTrainer)?.multiplier ?? 1)
 
   // E acts on whatever is in range (see the prompts in the world); Win pads need it held.
   useEffect(() => {
@@ -616,7 +533,7 @@ export function GameHUD() {
       {/* Wins stay at the top; action buttons form their own centred left rail. */}
       <WinsCounter />
       <LeftActionRail />
-      <BossBar />
+      <RingHUD />
       <PromoStack />
       <PetsPanel />
       <RebirthPanel />
@@ -634,8 +551,8 @@ export function GameHUD() {
         anything parked there hides them. The one thing a player has to be able to see
         in a game about hitting things is the thing doing the hitting.
 
-        Ammo, speed and the multiplier share one line. The level bar stays centred,
-        with the boost row below it.
+        Strength, speed and the multiplier share one line. The level bar stays
+        centred, with the boost row below it.
       */}
       <div
         ref={strip}
@@ -673,12 +590,12 @@ export function GameHUD() {
             </span>
           </button>
         ) : (
-          ammo === 0 && (
+          strength === 0 && (
             <div
               className={`animate-pulse text-white ${touch ? 'text-center text-xs' : 'text-2xl'}`}
               style={OUTLINE}
             >
-              {touch ? 'Tap 🔫 to shoot!' : 'Click to shoot your gun!'}
+              {touch ? 'Tap 👊 to punch!' : 'Click to punch!'}
             </div>
           )
         )}
@@ -687,22 +604,22 @@ export function GameHUD() {
           <>
             <div className="flex w-full items-center justify-between gap-2 text-white" style={OUTLINE}>
               {/* Click popups fly to this element; the value bounces as it changes. */}
-              <span data-ammo-counter className="flex items-center gap-1 whitespace-nowrap text-sm">
-                <AmmoIcon className="h-4 w-4" />
-                <span key={ammo} className="power-bump">
-                  {formatNumber(ammo)}
+              <span data-strength-counter className="flex items-center gap-1 whitespace-nowrap text-sm">
+                <FistIcon className="h-4 w-4" />
+                <span key={strength} className="power-bump">
+                  {formatNumber(strength)}
                 </span>{' '}
-                Ammo
+                Strength
               </span>
               <span className="flex flex-col items-end text-[9px] leading-tight text-sky-300">
                 <span className="flex items-center gap-0.5">
                   <ShoeIcon className="h-2.5 w-2.5" />
                   Speed: {WALK_SPEED}
                 </span>
-                <span className="text-lime-300">{multiplier.toFixed(2)}x Power</span>
+                <span className="text-lime-300">Punch x{multiplier.toFixed(2)}</span>
               </span>
             </div>
-            <LevelBar ammo={ammo} />
+            <LevelBar strength={strength} />
             {/* Leave room for the price tags above the compact boost buttons. */}
             <div className="pointer-events-auto flex justify-center gap-1 overflow-x-auto pt-3">
               {BOOSTS.map((def) => (
@@ -714,23 +631,23 @@ export function GameHUD() {
           <>
             <div className="mt-1 flex w-full max-w-4xl flex-col items-center gap-2">
               <div className="flex w-full items-center justify-between gap-3 text-white" style={OUTLINE}>
-                {/* Ammo stays left; speed and power sit together on the right. */}
-                <span data-ammo-counter className="flex items-center gap-1.5 whitespace-nowrap text-4xl">
-                  <AmmoIcon className="h-10 w-10" />
-                  <span key={ammo} className="power-bump">
-                    {formatNumber(ammo)}
+                {/* Strength stays left; speed and punch power sit together on the right. */}
+                <span data-strength-counter className="flex items-center gap-1.5 whitespace-nowrap text-4xl">
+                  <FistIcon className="h-10 w-10" />
+                  <span key={strength} className="power-bump">
+                    {formatNumber(strength)}
                   </span>
-                  Ammo
+                  Strength
                 </span>
                 <span className="flex flex-col items-end text-lg leading-tight text-sky-300">
                   <span className="flex items-center gap-1 whitespace-nowrap">
                     <ShoeIcon className="h-5 w-5" />
                     Speed: {WALK_SPEED}
                   </span>
-                  <span className="whitespace-nowrap text-lime-300">{multiplier.toFixed(2)}x Power</span>
+                  <span className="whitespace-nowrap text-lime-300">Punch Damage x{multiplier.toFixed(2)}</span>
                 </span>
               </div>
-              <LevelBar ammo={ammo} />
+              <LevelBar strength={strength} />
               <div className="flex w-full gap-3">
                 {BOOSTS.map((def) => (
                   <BoostButton key={def.multiplier} def={def} now={now} />

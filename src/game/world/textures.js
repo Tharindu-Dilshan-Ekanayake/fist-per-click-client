@@ -1,4 +1,4 @@
-import { CanvasTexture, RepeatWrapping, SRGBColorSpace } from 'three'
+import { CanvasTexture, LinearFilter, RepeatWrapping, SRGBColorSpace } from 'three'
 
 import { formatNumber } from '../format'
 import { FONT_WEIGHT, GAME_FONT } from '../font'
@@ -418,6 +418,128 @@ function leaves(ctx, w, h, seed) {
   }
 }
 
+/**
+ * A bevelled block of any outline - the polygon version of drawBlock: a drop shadow,
+ * a dark base, a lit copy nudged up-left, and the face inset over both.
+ */
+function drawPolyBlock(ctx, pts, color, rand, outline) {
+  const cx = pts.reduce((sum, [x]) => sum + x, 0) / pts.length
+  const cy = pts.reduce((sum, [, y]) => sum + y, 0) / pts.length
+  const size = Math.max(...pts.map(([x, y]) => Math.hypot(x - cx, y - cy)))
+  const path = (k, dx = 0, dy = 0) => {
+    ctx.beginPath()
+    pts.forEach(([x, y], i) => {
+      const px = cx + (x - cx) * k + dx
+      const py = cy + (y - cy) * k + dy
+      if (i) ctx.lineTo(px, py)
+      else ctx.moveTo(px, py)
+    })
+    ctx.closePath()
+  }
+  path(1, size * 0.05, size * 0.08)
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'
+  ctx.fill()
+  ctx.save()
+  path(1)
+  ctx.clip()
+  ctx.fillStyle = shade(color, -0.32)
+  ctx.fill()
+  path(1, -size * 0.1, -size * 0.1)
+  ctx.fillStyle = shade(color, 0.3)
+  ctx.fill()
+  const face = ctx.createLinearGradient(0, cy - size, 0, cy + size)
+  face.addColorStop(0, shade(color, 0.1))
+  face.addColorStop(1, shade(color, -0.12))
+  path(0.8)
+  ctx.fillStyle = face
+  ctx.fill()
+  for (let i = 0; i < 4; i++) {
+    const a = rand() * Math.PI * 2
+    const r = rand() * size * 0.5
+    disc(ctx, cx + Math.cos(a) * r, cy + Math.sin(a) * r, 1.5 + rand() * 2.5, shade(color, rand() < 0.5 ? -0.14 : 0.12))
+  }
+  ctx.restore()
+  if (outline) {
+    path(1)
+    ctx.lineWidth = 2.5
+    ctx.strokeStyle = outline
+    ctx.stroke()
+  }
+}
+
+/**
+ * Chunky square blocks in a straight grid - eight across and five up, two metres a
+ * side, which is also how the wall comes apart (see StageWall's debris).
+ */
+function blocks(ctx, w, h, { palette, gap, seed, cols = 8, rows = 5 }) {
+  const rand = mulberry32(seed)
+  ctx.fillStyle = gap
+  ctx.fillRect(0, 0, w, h)
+  const bw = w / cols
+  const bh = h / rows
+  const m = bh * 0.05
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const color = palette[Math.floor(rand() * palette.length)]
+      drawBlock(ctx, c * bw + m, r * bh + m, bw - 2 * m, bh - 2 * m, color, rand, {
+        radius: 0.14,
+        bevel: 0.13,
+        outline: shade(gap, -0.3),
+      })
+      // A recessed square in each, like a stamped paving slab.
+      ctx.strokeStyle = 'rgba(0,0,0,0.16)'
+      ctx.lineWidth = 3
+      ctx.strokeRect(c * bw + bw * 0.3, r * bh + bh * 0.3, bw * 0.4, bh * 0.4)
+    }
+  }
+}
+
+/** A honeycomb of bevelled hexagons. */
+function hexes(ctx, w, h, { palette, gap, seed, rows = 5 }) {
+  const rand = mulberry32(seed)
+  ctx.fillStyle = gap
+  ctx.fillRect(0, 0, w, h)
+  const r = h / (rows * Math.sqrt(3))
+  const hexH = Math.sqrt(3) * r
+  for (let col = -1; col * 1.5 * r < w + r; col++) {
+    const cx = col * 1.5 * r
+    const offset = col % 2 ? hexH / 2 : 0
+    for (let row = -1; row * hexH < h + hexH; row++) {
+      const cy = row * hexH + offset
+      const pts = []
+      for (let i = 0; i < 6; i++) {
+        const a = (Math.PI / 3) * i
+        pts.push([cx + Math.cos(a) * r * 0.92, cy + Math.sin(a) * r * 0.92])
+      }
+      drawPolyBlock(ctx, pts, palette[Math.floor(rand() * palette.length)], rand, shade(gap, -0.3))
+    }
+  }
+}
+
+/** Diamonds set point to point, like a harlequin floor stood on end. */
+function diamonds(ctx, w, h, { palette, gap, seed, cols = 7, rows = 5 }) {
+  const rand = mulberry32(seed)
+  ctx.fillStyle = gap
+  ctx.fillRect(0, 0, w, h)
+  const dw = w / cols
+  const dh = (h / rows) * 1.0
+  for (let j = -1; j <= rows * 2 + 1; j++) {
+    const cy = (j * dh) / 2
+    const offset = j % 2 ? dw / 2 : 0
+    for (let i = -1; i <= cols; i++) {
+      const cx = i * dw + offset
+      const k = 0.46
+      const pts = [
+        [cx, cy - dh * k],
+        [cx + dw * k, cy],
+        [cx, cy + dh * k],
+        [cx - dw * k, cy],
+      ]
+      drawPolyBlock(ctx, pts, palette[Math.floor(rand() * palette.length)], rand, shade(gap, -0.3))
+    }
+  }
+}
+
 /** The breakable-looking surface for stage wall `id`, drawn from its theme. */
 export function wallTexture(id, def) {
   return cached(`wall:${id}`, () => {
@@ -427,7 +549,10 @@ export function wallTexture(id, def) {
     const px = w / 512
     const [canvas, ctx] = makeCanvas(w, h)
     const seed = id * 7919
-    if (def.style === 'stones') stones(ctx, w, h, { ...def, seed })
+    if (def.style === 'blocks') blocks(ctx, w, h, { ...def, seed })
+    else if (def.style === 'hex') hexes(ctx, w, h, { ...def, seed })
+    else if (def.style === 'diamond') diamonds(ctx, w, h, { ...def, seed })
+    else if (def.style === 'stones') stones(ctx, w, h, { ...def, seed })
     else if (def.style === 'bricks') bricks(ctx, w, h, { ...def, seed })
     else if (def.style === 'planks') planks(ctx, w, h, { ...def, seed })
     else if (def.style === 'lava') voronoi(ctx, w, h, { ...def, seed, cols: 9, gapWidth: 5 * px, bevel: 0.45 })
@@ -439,90 +564,275 @@ export function wallTexture(id, def) {
 }
 
 /**
- * The wall's big number on a transparent canvas laid over its surface. Not cached:
- * there are over a hundred walls, so each mounted wall owns (and disposes) its own.
+ * The wall's number on a transparent canvas laid over its surface: a dark badge with
+ * "WALL" over a big number in the stage's colour. Not cached: there are over a
+ * hundred walls, so each mounted wall owns (and disposes) its own.
  */
-export function createWallNumber(number) {
+export function createWallNumber(number, accent = '#62f3ff') {
   const w = 384
   const h = 240
   const [canvas, ctx] = makeCanvas(w, h)
   const text = String(number)
   const x = w / 2
-  const y = h * 0.3
+  const y = h * 0.29
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.lineJoin = 'round'
-  ctx.font = `${FONT_WEIGHT.heavy} 88px ${FONT}`
 
-  ctx.lineWidth = 16
-  ctx.strokeStyle = 'rgba(0,0,0,0.4)'
-  ctx.strokeText(text, x, y + 6)
-  ctx.lineWidth = 13
-  ctx.strokeStyle = '#15151d'
-  ctx.strokeText(text, x, y)
-  const grad = ctx.createLinearGradient(0, y - 38, 0, y + 38)
+  // The badge behind it: a rounded plate with a glowing rim in the stage colour.
+  ctx.font = `${FONT_WEIGHT.heavy} 76px ${FONT}`
+  const textW = ctx.measureText(text).width
+  const bw = Math.max(118, textW + 64)
+  const bh = 104
+  const bx = x - bw / 2
+  const by = y - bh / 2 - 8
+  ctx.fillStyle = 'rgba(12, 14, 30, 0.72)'
+  ctx.beginPath()
+  ctx.roundRect(bx, by, bw, bh, 22)
+  ctx.fill()
+  ctx.lineWidth = 5
+  ctx.strokeStyle = accent
+  ctx.shadowColor = accent
+  ctx.shadowBlur = 12
+  ctx.stroke()
+  ctx.shadowBlur = 0
+
+  ctx.font = `${FONT_WEIGHT.heavy} 20px ${FONT}`
+  ctx.fillStyle = shade(accent, 0.35)
+  ctx.fillText('WALL', x, by + 18)
+
+  ctx.font = `${FONT_WEIGHT.heavy} 70px ${FONT}`
+  ctx.lineWidth = 12
+  ctx.strokeStyle = '#0b0b14'
+  ctx.strokeText(text, x, y + 12)
+  const grad = ctx.createLinearGradient(0, y - 22, 0, y + 46)
   grad.addColorStop(0, '#ffffff')
-  grad.addColorStop(1, '#d9e1ef')
+  grad.addColorStop(1, shade(accent, 0.15))
   ctx.fillStyle = grad
-  ctx.fillText(text, x, y)
+  ctx.fillText(text, x, y + 12)
   return finish(canvas, { repeat: false })
 }
 
 /** Canvas size of a health bar; its plane should keep this aspect. */
-export const HP_BAR_ASPECT = 512 / 72
+export const HP_BAR_ASPECT = 512 / 84
 
 /**
- * A wall's health bar: a rounded pill that empties from green through yellow to red,
- * with "hp / max" on it. Redraw it with `draw(hp, max)` whenever the health changes.
+ * A wall's health bar: a fist badge on the left and a segmented pill that empties
+ * from green through yellow to red, with "hp / max" on it. Redraw it with
+ * `draw(hp, max)` whenever the health changes.
  */
 export function createHpBar() {
   const w = 512
-  const h = 72
+  const h = 84
   const [canvas, ctx] = makeCanvas(w, h)
   const texture = finish(canvas, { repeat: false })
-  const outline = '#111a0c'
+  const outline = '#0c0f1c'
 
   const draw = (hp, max) => {
     const f = Math.max(0, Math.min(1, hp / max))
     ctx.clearRect(0, 0, w, h)
+    // Frame.
     ctx.fillStyle = outline
     ctx.beginPath()
-    ctx.roundRect(3, 3, w - 6, h - 6, (h - 6) / 2)
+    ctx.roundRect(46, 10, w - 52, h - 20, (h - 20) / 2)
+    ctx.fill()
+    ctx.fillStyle = '#1f2440'
+    ctx.beginPath()
+    ctx.roundRect(54, 17, w - 68, h - 34, (h - 34) / 2)
     ctx.fill()
 
-    const ix = 11
-    const iy = 11
-    const ih = h - 22
-    const iw = (w - 22) * f
+    const ix = 54
+    const iy = 17
+    const ih = h - 34
+    const full = w - 68
+    const iw = full * f
     if (iw > 0) {
-      const [top, bottom] = f > 0.5 ? ['#b4ff6e', '#35c21d'] : f > 0.25 ? ['#fff07a', '#e0a800'] : ['#ff9a7a', '#d62a1a']
+      const [top, bottom] = f > 0.5 ? ['#b4ff6e', '#22b81a'] : f > 0.25 ? ['#fff07a', '#e09400'] : ['#ffa08a', '#d62a1a']
       const grad = ctx.createLinearGradient(0, iy, 0, iy + ih)
       grad.addColorStop(0, top)
       grad.addColorStop(1, bottom)
+      ctx.save()
+      ctx.beginPath()
+      ctx.roundRect(ix, iy, full, ih, ih / 2)
+      ctx.clip()
       ctx.fillStyle = grad
-      ctx.beginPath()
-      ctx.roundRect(ix, iy, iw, ih, ih / 2)
-      ctx.fill()
+      ctx.fillRect(ix, iy, iw, ih)
       ctx.fillStyle = 'rgba(255,255,255,0.35)'
-      ctx.beginPath()
-      ctx.roundRect(ix + 8, iy + 4, Math.max(0, iw - 16), ih * 0.22, ih * 0.11)
-      ctx.fill()
+      ctx.fillRect(ix, iy + 3, iw, ih * 0.24)
+      ctx.restore()
     }
+    // Ticks every tenth, so a hit reads as a bite.
+    ctx.fillStyle = 'rgba(12,15,28,0.45)'
+    for (let i = 1; i < 10; i++) ctx.fillRect(ix + (full * i) / 10 - 1.5, iy + 4, 3, ih - 8)
+
+    // The fist badge, over the bar's left end.
+    ctx.fillStyle = outline
+    ctx.beginPath()
+    ctx.arc(42, h / 2, 38, 0, Math.PI * 2)
+    ctx.fill()
+    const badge = ctx.createLinearGradient(0, 8, 0, h - 8)
+    badge.addColorStop(0, '#3b4472')
+    badge.addColorStop(1, '#1c2140')
+    ctx.fillStyle = badge
+    ctx.beginPath()
+    ctx.arc(42, h / 2, 32, 0, Math.PI * 2)
+    ctx.fill()
+    drawIcon(ctx, 'fist', 16, h / 2 - 26, 52)
 
     const label = `${formatNumber(hp)} / ${formatNumber(max)}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.lineJoin = 'round'
-    ctx.font = `${FONT_WEIGHT.heavy} 38px ${FONT}`
+    ctx.font = `${FONT_WEIGHT.heavy} 36px ${FONT}`
     ctx.lineWidth = 9
     ctx.strokeStyle = outline
-    ctx.strokeText(label, w / 2, h / 2 + 2)
+    ctx.strokeText(label, 54 + full / 2, h / 2 + 2)
     ctx.fillStyle = '#ffffff'
-    ctx.fillText(label, w / 2, h / 2 + 2)
+    ctx.fillText(label, 54 + full / 2, h / 2 + 2)
     texture.needsUpdate = true
   }
 
   return { texture, draw }
+}
+
+/** How many different crack patterns there are; walls take them in turn. */
+export const CRACK_VARIANTS = 5
+
+/**
+ * Cracks for a stage wall, as an alpha map that is also a timeline.
+ *
+ * Every line's green value says how damaged the wall has to be before it shows: the
+ * first cracks out of the three punch points are near white, the late spider-web is
+ * near black. A material with this as its `alphaMap` and `alphaTest` set to
+ * `1 - damage` then shows exactly the cracks earned so far, and they grow out from
+ * where you punch as the wall weakens - and close up again as it heals - with no
+ * redrawing at all. One shared map per pattern, for every wall that uses it.
+ */
+export function crackTexture(variant) {
+  return cached(`crack:${variant}`, () => {
+    const w = 512
+    const h = 320
+    const [canvas, ctx] = makeCanvas(w, h)
+    ctx.fillStyle = '#000000'
+    ctx.fillRect(0, 0, w, h)
+    // Where lines cross, keep the earlier one.
+    ctx.globalCompositeOperation = 'lighten'
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    const rand = mulberry32(9001 + variant * 131)
+    const segs = []
+
+    const crack = (x, y, angle, len, t0, span, width, depth) => {
+      let px = x
+      let py = y
+      let a = angle
+      let travelled = 0
+      while (travelled < len) {
+        a += (rand() - 0.5) * 0.8
+        const step = 9 + rand() * 11
+        const nx = px + Math.cos(a) * step
+        const ny = py + Math.sin(a) * step
+        const t = t0 + span * (travelled / len)
+        segs.push([px, py, nx, ny, t, Math.max(1.4, width * (1 - (travelled / len) * 0.65))])
+        travelled += step
+        px = nx
+        py = ny
+        if (depth < 2 && rand() < 0.15) {
+          const turn = (rand() < 0.5 ? 1 : -1) * (0.5 + rand() * 0.7)
+          crack(px, py, a + turn, len * (0.25 + rand() * 0.3), t, span * 0.6, width * 0.6, depth + 1)
+        }
+        if (px < -12 || px > w + 12 || py < -12 || py > h + 12) break
+      }
+    }
+
+    // Three punch points along chest height (canvas y grows downwards), cracks
+    // fanning out of each, mostly up and to the sides.
+    const origins = [
+      [0.5, 0.8],
+      [0.22, 0.83],
+      [0.78, 0.81],
+    ].map(([ox, oy]) => [ox + (rand() - 0.5) * 0.06, oy + (rand() - 0.5) * 0.04])
+    origins.forEach(([ox, oy], o) => {
+      const n = 6 + Math.floor(rand() * 3)
+      for (let k = 0; k < n; k++) {
+        const angle = -Math.PI / 2 + (k / (n - 1) - 0.5) * Math.PI * 1.6 + (rand() - 0.5) * 0.4
+        const t0 = 0.03 + o * 0.05 + k * 0.03 + rand() * 0.05
+        crack(ox * w, oy * h, angle, h * (0.35 + rand() * 0.6), t0, 0.5 + rand() * 0.3, 8.5, 0)
+      }
+    })
+    // Near the end, a web of short cracks right across it.
+    for (let i = 0; i < 46; i++) {
+      crack(rand() * w, rand() * h, rand() * Math.PI * 2, 24 + rand() * 46, 0.62 + rand() * 0.33, 0.08, 3.4, 2)
+    }
+
+    for (const [x0, y0, x1, y1, t, width] of segs) {
+      ctx.strokeStyle = `rgb(0,${Math.round(250 * (1 - Math.min(1, t)))},0)`
+      ctx.lineWidth = width
+      ctx.beginPath()
+      ctx.moveTo(x0, y0)
+      ctx.lineTo(x1, y1)
+      ctx.stroke()
+    }
+    // A crumbled dent at each punch point, there from the first hit.
+    for (const [ox, oy] of origins) {
+      ctx.fillStyle = 'rgb(0,240,0)'
+      ctx.beginPath()
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2
+        const r = 7 + rand() * 7
+        ctx.lineTo(ox * w + Math.cos(a) * r, oy * h + Math.sin(a) * r)
+      }
+      ctx.closePath()
+      ctx.fill()
+    }
+
+    // Data, not colour: no sRGB, and no mipmaps to blur the thresholds together.
+    const texture = new CanvasTexture(canvas)
+    texture.generateMipmaps = false
+    texture.minFilter = LinearFilter
+    return texture
+  })
+}
+
+/** A spiky white starburst for a punch landing; tint it with the material colour. */
+export function impactStarTexture() {
+  return cached('impact-star', () => {
+    const s = 192
+    const [canvas, ctx] = makeCanvas(s, s)
+    const c = s / 2
+    const spikes = 14
+    ctx.beginPath()
+    for (let i = 0; i < spikes * 2; i++) {
+      const a = (i / (spikes * 2)) * Math.PI * 2
+      const r = i % 2 === 0 ? c * (i % 4 === 0 ? 0.98 : 0.78) : c * 0.36
+      ctx.lineTo(c + Math.cos(a) * r, c + Math.sin(a) * r)
+    }
+    ctx.closePath()
+    const grad = ctx.createRadialGradient(c, c, 0, c, c, c)
+    grad.addColorStop(0, 'rgba(255,255,255,1)')
+    grad.addColorStop(0.35, 'rgba(255,250,210,0.95)')
+    grad.addColorStop(0.7, 'rgba(255,200,90,0.55)')
+    grad.addColorStop(1, 'rgba(255,140,40,0)')
+    ctx.fillStyle = grad
+    ctx.fill()
+    return finish(canvas, { repeat: false })
+  })
+}
+
+/** A soft ring, for the shock wave off a landing punch. */
+export function impactRingTexture() {
+  return cached('impact-ring', () => {
+    const s = 128
+    const [canvas, ctx] = makeCanvas(s, s)
+    const c = s / 2
+    const grad = ctx.createRadialGradient(c, c, c * 0.55, c, c, c)
+    grad.addColorStop(0, 'rgba(255,255,255,0)')
+    grad.addColorStop(0.55, 'rgba(255,255,255,0.95)')
+    grad.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = grad
+    ctx.fillRect(0, 0, s, s)
+    return finish(canvas, { repeat: false })
+  })
 }
 
 // --- Effects --------------------------------------------------------------------
@@ -683,7 +993,7 @@ export function skyTexture() {
   })
 }
 
-/** Small outlined icon in an `s`-sized square at (x, y): 'trophy', 'ammo' or 'star'. */
+/** Small outlined icon in an `s`-sized square at (x, y): 'trophy', 'fist' or 'star'. */
 function drawIcon(ctx, kind, x, y, s) {
   ctx.save()
   ctx.translate(x, y)
@@ -720,40 +1030,39 @@ function drawIcon(ctx, kind, x, y, s) {
     ctx.stroke()
     ctx.fillStyle = gold
     ctx.fill()
-  } else if (kind === 'ammo') {
-    // Two rounds standing side by side, the back one taller: a copper tip on a brass
-    // case, the way the reference game draws its Ammo.
-    const round = (cx, top, w) => {
-      const caseTop = top + w * 1.15
-      const brass = ctx.createLinearGradient(cx - w / 2, 0, cx + w / 2, 0)
-      brass.addColorStop(0, '#fff3a0')
-      brass.addColorStop(0.5, '#ffc21a')
-      brass.addColorStop(1, '#c88400')
-      const copper = ctx.createLinearGradient(cx - w / 2, 0, cx + w / 2, 0)
-      copper.addColorStop(0, '#ffd1a0')
-      copper.addColorStop(1, '#e0702a')
-      ctx.lineWidth = 7
-      ctx.strokeStyle = outline
-      ctx.beginPath()
-      ctx.moveTo(cx - w / 2, caseTop)
-      ctx.quadraticCurveTo(cx - w / 2, top + w * 0.2, cx, top)
-      ctx.quadraticCurveTo(cx + w / 2, top + w * 0.2, cx + w / 2, caseTop)
-      ctx.closePath()
-      ctx.stroke()
-      ctx.fillStyle = copper
-      ctx.fill()
-      ctx.beginPath()
-      ctx.rect(cx - w / 2, caseTop, w, 92 - caseTop)
-      ctx.stroke()
-      ctx.fillStyle = brass
-      ctx.fill()
-      ctx.beginPath()
-      ctx.rect(cx - w / 2 - 3, 84, w + 6, 8)
-      ctx.stroke()
-      ctx.fill()
-    }
-    round(36, 8, 30)
-    round(66, 26, 28)
+  } else if (kind === 'fist') {
+    // A red boxing glove, knuckles up, on a white cuff with a gold stripe - the
+    // game's Strength, the way the HUD draws it.
+    const red = ctx.createLinearGradient(10, 0, 90, 90)
+    red.addColorStop(0, '#ff9a88')
+    red.addColorStop(0.5, '#f0302a')
+    red.addColorStop(1, '#b0140f')
+    ctx.lineWidth = 8
+    ctx.strokeStyle = outline
+    ctx.beginPath()
+    ctx.roundRect(28, 66, 46, 28, 6)
+    ctx.stroke()
+    ctx.fillStyle = '#f4f4f4'
+    ctx.fill()
+    ctx.fillStyle = '#ffd23f'
+    ctx.fillRect(31, 74, 40, 8)
+    ctx.beginPath()
+    ctx.moveTo(30, 70)
+    ctx.bezierCurveTo(16, 58, 14, 26, 34, 12)
+    ctx.bezierCurveTo(50, 2, 78, 4, 86, 22)
+    ctx.bezierCurveTo(95, 40, 90, 62, 74, 70)
+    ctx.closePath()
+    ctx.stroke()
+    ctx.fillStyle = red
+    ctx.fill()
+    ctx.beginPath()
+    ctx.ellipse(31, 47, 12, 17, -0.25, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.fill()
+    ctx.beginPath()
+    ctx.ellipse(62, 22, 14, 6, -0.35, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(255,255,255,0.5)'
+    ctx.fill()
   } else if (kind === 'star') {
     // The rebirth star, to mark a price paid in rebirths rather than in a currency.
     const gold = ctx.createLinearGradient(0, 0, 0, 100)
@@ -779,7 +1088,7 @@ function drawIcon(ctx, kind, x, y, s) {
 
 /**
  * Text sign. `lines` are strings or `{ text, scale, fill, icon }`; `fill` may be a
- * list of colours for a vertical gradient, and `icon` ('trophy' | 'ammo' | 'star') is
+ * list of colours for a vertical gradient, and `icon` ('trophy' | 'fist' | 'star') is
  * drawn before the text.
  */
 export function labelTexture({

@@ -4,7 +4,7 @@ import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, DoubleSide } 
 
 import { FOOTPRINT_S, footprintStyle, footprintTexture, pendingSteps } from './footprintSets'
 import { useGame } from './gameStore'
-import { getGun } from './guns'
+import { getGlove } from './gloves'
 import { radialGlowTexture } from './world/textures'
 
 /** Prints on the ground at once. A sprint lands about four a second, each lasting one. */
@@ -32,20 +32,20 @@ const _faded = new Color()
  */
 export function Footprints() {
   const id = useGame((s) => (s.footprints && s.ownedFootprints.includes(s.footprints) ? s.footprints : null))
-  return id ? <FootprintTrail key={id} gunId={id} stepsRef={ownStepsRef} /> : null
+  return id ? <FootprintTrail key={id} gloveId={id} stepsRef={ownStepsRef} /> : null
 }
 
 /**
- * One player's trail: prints, glow, ripples and sparks in `gunId`'s style, laid where
+ * One player's trail: prints, glow, ripples and sparks in `gloveId`'s style, laid where
  * each step in `stepsRef.current` (a queue of `{ x, y, z, yaw, side }`, drained
  * here) landed.
  * Our own trail is fed by Player; other players' by RemotePlayers, from their
  * played-back movement - so everyone sees everyone's footprints.
  */
-export function FootprintTrail({ gunId, stepsRef }) {
-  const gun = getGun(gunId)
-  const style = useMemo(() => footprintStyle(gun), [gun])
-  const map = footprintTexture(gunId)
+export function FootprintTrail({ gloveId, stepsRef }) {
+  const glove = getGlove(gloveId)
+  const style = useMemo(() => footprintStyle(glove), [glove])
+  const map = footprintTexture(gloveId)
   const glowMap = radialGlowTexture()
 
   const prints = useRef([])
@@ -104,7 +104,7 @@ export function FootprintTrail({ gunId, stepsRef }) {
     // Through the ref, not the memo: the geometry is the points' to update.
     const pos = sparkPoints.current?.geometry.attributes.position
     const col = sparkPoints.current?.geometry.attributes.color
-    _c.set(gun.trim)
+    _c.set(glove.trim)
     for (let i = 0; i < POOL; i++) {
       const slot = s.slots[i]
       const age = (now - slot.at) / FOOTPRINT_S
@@ -181,7 +181,7 @@ export function FootprintTrail({ gunId, stepsRef }) {
             }}
           >
             <planeGeometry args={[1.1 * style.scale, 1.1 * style.scale]} />
-            <meshBasicMaterial map={glowMap} color={gun.trim} transparent blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
+            <meshBasicMaterial map={glowMap} color={glove.trim} transparent blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
           </mesh>
           {style.ripple && (
             <mesh
@@ -192,7 +192,7 @@ export function FootprintTrail({ gunId, stepsRef }) {
               }}
             >
               <ringGeometry args={[0.42, 0.5, 32]} />
-              <meshBasicMaterial color={gun.accent} transparent side={DoubleSide} blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
+              <meshBasicMaterial color={glove.cuff} transparent side={DoubleSide} blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
             </mesh>
           )}
         </group>
