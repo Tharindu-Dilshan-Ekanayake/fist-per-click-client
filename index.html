@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- The game waits for this before it starts (see src/main.jsx), so it is the
+         one file worth fetching before the browser has finished reading the CSS
+         that would otherwise be the first to ask for it. -->
+    <link rel="preload" href="/fredoka.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- maximum-scale/user-scalable: a game is not a document. Pinching is the
+         camera's zoom (see FollowCamera) and a double-tap is two swings, so letting
+         the browser take either of them makes the game unplayable on a phone.
+         viewport-fit=cover puts the canvas under the notch; the HUD keeps clear of
+         it with the safe-area insets in index.css. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>+1 Ammo Per Click</title>
+
+    <!-- Bloxity SDK. Exposes itself as window.Legion.SDK.
+         Must load before the Vite entry script below. -->
+    <script src="https://sdk.bloxity.io/v1/legion-sdk.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

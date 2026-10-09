@@ -1,0 +1,81 @@
+# Builds the game and uploads it to Bloxity's frontend hosting.
+#
+# Needs, in this repo's GitHub settings first:
+#   Settings -> Secrets and variables -> Actions -> Secrets   -> LEGION_DEPLOY_TOKEN
+#   Settings -> Secrets and variables -> Actions -> Variables -> LEGION_GAME_ID
+#                                                              -> VITE_GAME_SLUG
+#
+# LEGION_DEPLOY_TOKEN is the same token the server repo deploys with (My Games, behind
+# the eye icon). LEGION_GAME_ID is the hosting id; VITE_GAME_SLUG is the slug the game
+# is registered under on bloxity.io - usually the same string.
+#
+# `main` pushes go to the prod channel (https://<id>.play.bloxity.io), `dev` pushes to
+# the dev channel (https://<id>.dev.play.bloxity.io). A page on either finds its own
+# back end and matchmaker from its address (see src/net/hosting.js), so the same build
+# works on both.
+name: Deploy client to Bloxity
+
+on:
+  push:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # Fail in the first second, with the reason, rather than at the upload with an
+      # unexplained 404 or 401.
+      - name: Check the repo settings
+        env:
+          TOKEN: ${{ secrets.LEGION_DEPLOY_TOKEN }}
+          GAME_ID: ${{ vars.LEGION_GAME_ID }}
+          SLUG: ${{ vars.VITE_GAME_SLUG }}
+        run: |
+          missing=""
+          [ -n "$TOKEN" ] || missing="$missing secret LEGION_DEPLOY_TOKEN,"
+          [ -n "$GAME_ID" ] || missing="$missing variable LEGION_GAME_ID,"
+          [ -n "$SLUG" ] || missing="$missing variable VITE_GAME_SLUG,"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing in Settings -> Secrets and variables -> Actions:$missing"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Work out the channel
+        id: plan
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "channel=prod" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_GAME_SLUG: ${{ vars.VITE_GAME_SLUG }}
+          VITE_HOSTING_ID: ${{ vars.LEGION_GAME_ID }}
+          VITE_CHANNEL: ${{ steps.plan.outputs.channel }}
+
+      # The zip holds the build's files at its top level, not inside a dist/ folder.
+      - name: Zip the build
+        run: cd dist && zip -qr ../build.zip .
+
+      - name: Upload to Bloxity
+        run: |
+          curl --fail-with-body -sS -X POST \
+            "https://api.bloxity.io/v1/hosting/games/${{ vars.LEGION_GAME_ID }}/frontend?channel=${{ steps.plan.outputs.channel }}&version=${{ github.sha }}" \
+            -H "Authorization: Bearer ${{ secrets.LEGION_DEPLOY_TOKEN }}" \
+            -H "Content-Type: application/zip" \
+            --data-binary @build.zip
