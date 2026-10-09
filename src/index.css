@@ -356,3 +356,22 @@ canvas {
 .aura-preview {
   animation: aura-preview 1.8s ease-in-out infinite;
 }
+
+/* The Guide pops in with a little overshoot. */
+@keyframes guide-pop {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.015);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.guide-pop {
+  animation: guide-pop 0.3s ease-out;
+}

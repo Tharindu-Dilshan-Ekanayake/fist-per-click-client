@@ -393,7 +393,7 @@ export function toggleMusic() {
  * hook every other time round. It sits well under the game: MUSIC_LEVEL of the
  * master volume, so punches and walls always come first.
  */
-const MUSIC_LEVEL = 0.22
+const MUSIC_LEVEL = 0.09
 const BPM = 122
 const STEP = 60 / BPM / 4
 /** Bass roots and chord tones per bar, in Hz. */

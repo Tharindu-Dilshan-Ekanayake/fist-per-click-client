@@ -6,14 +6,6 @@ import { CHIP, OUTLINE } from './textStyle'
 
 const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyE', 'KeyP', 'KeyR', 'KeyB', 'KeyC', 'KeyG', 'KeyM', 'KeyN'])
 
-const STEPS = [
-  ['01', 'Click to punch! Every punch gives you Strength.'],
-  ['02', 'Follow the blue arrows to the Stage 1 gate and smash the walls - break 10 to clear a stage.'],
-  ['03', 'Hold E on a Win pad to cash in your Wins. Spend them on bigger gloves, pets and punching bags.'],
-  ['04', 'Step onto a punching bag\u2019s pad to train on it: it multiplies your Strength.'],
-  ['05', 'Reach the level cap and Rebirth for permanent Power. Rebirth 3 opens Space World.'],
-]
-
 /** The boxing rings, step by step: [icon, title, what happens]. */
 const RING_STEPS = [
   ['🏟️', 'Find the rings', 'Four rings wait behind the training zone, past the BOXING RINGS arch.'],
@@ -37,7 +29,7 @@ const RING_RULES = [
 function RingsCard({ touch }) {
   return (
     <div
-      className="relative mt-5 overflow-hidden rounded-2xl border-[4px] border-[#191827] shadow-[0_5px_0_rgba(0,0,0,0.35)]"
+      className="relative overflow-hidden rounded-2xl border-[4px] border-[#191827] shadow-[0_5px_0_rgba(0,0,0,0.35)]"
       style={{ background: 'linear-gradient(135deg, #2a1240 0%, #1b1d4a 55%, #10284f 100%)' }}
     >
       {/* Red corner and blue corner glowing in from either side. */}
@@ -114,11 +106,24 @@ function RingsCard({ touch }) {
   )
 }
 
-function Key({ children }) {
+/** The main steps: [icon, title, text, colours of the icon tile]. */
+const STEPS = [
+  ['👊', 'Punch', 'Click to punch! Every punch gives you Strength.', ['#ff8a7a', '#e8352d']],
+  ['🧱', 'Smash the walls', 'Follow the blue arrows to Stage 1. Break 10 walls to clear a stage.', ['#9fe8ff', '#2f7cff']],
+  ['🏆', 'Cash in', 'Hold E on a Win pad for Wins. Spend them on gloves, pets and bags.', ['#fff3a0', '#f0a000']],
+  ['🎯', 'Train', 'Stand on a punching bag’s pad - it multiplies your Strength.', ['#b4ff8a', '#2fb24a']],
+  ['🔄', 'Rebirth', 'Max your level and Rebirth for more Power. Rebirth 3 opens Space World.', ['#e6c9ff', '#8a4dff']],
+]
+
+/** One control: the key and what it does. */
+function Control({ k, does }) {
   return (
-    <span className="rounded-lg border-2 border-slate-900/20 bg-white px-2 py-1 text-xs font-black text-slate-900 shadow-[0_2px_0_rgba(15,23,42,0.18)]">
-      {children}
-    </span>
+    <div className="flex items-center gap-2">
+      <span className="min-w-[3.25rem] rounded-lg border-2 border-[#191827] bg-white px-1.5 py-0.5 text-center text-[11px] font-black text-[#191827] shadow-[0_2px_0_rgba(0,0,0,0.35)]">
+        {k}
+      </span>
+      <span className="text-xs font-bold text-slate-200">{does}</span>
+    </div>
   )
 }
 
@@ -126,6 +131,9 @@ function Key({ children }) {
  * The Guide: how to play, on top of the game when it starts and again whenever the
  * Guide button in the left rail is pressed (see GuideButton). The ✕, Escape or
  * "Let's play!" close it.
+ *
+ * Laid out to fit one screen on a desktop - the basics on the left, the boxing rings
+ * on the right - and as one column on a phone.
  */
 export function HowToPlay() {
   const touch = useTouchDevice()
@@ -154,19 +162,39 @@ export function HowToPlay() {
 
   if (!open) return null
 
+  const controls = touch
+    ? [['Stick', 'Move'], ['Drag', 'Look around'], ['JUMP', 'Jump'], ['👊', 'Punch']]
+    : [['WASD', 'Move'], ['Space', 'Jump'], ['Shift', 'Sprint'], ['Click', 'Punch'], ['E', 'Interact'], ['R-drag', 'Look around']]
+
   return (
     <div
-      className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:p-6"
+      className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 p-2 backdrop-blur-sm sm:p-5"
       role="presentation"
     >
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="how-to-play-title"
-        className="my-auto w-full max-w-xl overflow-hidden rounded-[1.75rem] border-[5px] border-[#191827] bg-[#fff9ed] shadow-[0_10px_0_rgba(0,0,0,0.55),0_24px_70px_rgba(0,0,0,0.45)]"
+        className="guide-pop relative flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-[1.75rem] border-[5px] border-[#191827] shadow-[0_10px_0_rgba(0,0,0,0.55),0_30px_80px_rgba(0,0,0,0.55)]"
+        style={{ background: 'linear-gradient(160deg, #241a4a 0%, #16183a 55%, #0f1f3d 100%)' }}
       >
-        <div className="relative px-5 pb-5 pt-6 sm:px-8 sm:pb-7 sm:pt-7">
-          <div className="pointer-events-none absolute inset-x-8 top-2 h-2 rounded-full bg-white/80" />
+        {/* Header: a red-and-gold fight-poster banner. */}
+        <div
+          className="relative shrink-0 overflow-hidden border-b-[4px] border-[#191827] px-5 py-3 text-center sm:py-4"
+          style={{ background: 'linear-gradient(90deg, #c81e2a 0%, #ff5a3a 50%, #2f6ee8 100%)' }}
+        >
+          <div className="pointer-events-none absolute inset-x-6 top-1.5 h-1.5 rounded-full bg-white/40" />
+          <div className="pointer-events-none absolute left-4 top-1/2 hidden -translate-y-1/2 -rotate-12 text-5xl opacity-40 sm:block">🥊</div>
+          <div className="pointer-events-none absolute right-16 top-1/2 hidden -translate-y-1/2 rotate-12 -scale-x-100 text-5xl opacity-40 sm:block">🥊</div>
+          <div className="text-[10px] font-black uppercase tracking-[0.35em] text-yellow-100 sm:text-xs" style={CHIP}>
+            Welcome to +1 Fist Per Click
+          </div>
+          <h1 id="how-to-play-title" className={`leading-none text-white ${touch ? 'text-3xl' : 'text-5xl'}`} style={OUTLINE}>
+            GUIDE
+          </h1>
+          <div className="mt-1 text-xs font-bold text-white/90 sm:text-sm" style={CHIP}>
+            Punch, smash the walls, earn Wins - and become the strongest fist in the lobby!
+          </div>
           <button
             type="button"
             aria-label="Close the guide"
@@ -176,67 +204,68 @@ export function HowToPlay() {
           >
             &#10006;
           </button>
-          <div className="mb-1 text-center text-xs font-black uppercase tracking-[0.2em] text-sky-700" style={CHIP}>
-            Welcome to +1 Fist
-          </div>
-          <h1 id="how-to-play-title" className="text-center text-3xl text-[#ffffff] sm:text-4xl" style={OUTLINE}>
-            Guide
-          </h1>
-          <p className="mt-1 text-center text-sm font-semibold text-slate-600 sm:text-base">
-            Punch, smash the walls, earn Wins - and become the strongest fist in the lobby.
-          </p>
+        </div>
 
-          <div className="mt-5 rounded-2xl border-2 border-slate-900/10 bg-[#f0e7d6] p-3 sm:p-4">
-            <div className="mb-2 text-xs font-black uppercase tracking-wide text-slate-600" style={CHIP}>
-              {touch ? 'Touch controls' : 'Controls'}
-            </div>
-            {touch ? (
-              <div className="grid grid-cols-2 gap-2 text-sm font-bold text-slate-800">
-                <div><Key>Joystick</Key> <span className="ml-1">Move</span></div>
-                <div><Key>Drag</Key> <span className="ml-1">Look around</span></div>
-                <div><Key>JUMP</Key> <span className="ml-1">Jump</span></div>
-                <div><Key>👊</Key> <span className="ml-1">Punch</span></div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
+          <div className={`grid gap-4 ${touch ? 'grid-cols-1' : 'md:grid-cols-2'}`}>
+            {/* The basics. */}
+            <div className="flex flex-col gap-2.5">
+              <div className="text-sm text-yellow-200 sm:text-base" style={OUTLINE}>
+                ⭐ How to play
               </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-x-5 gap-y-2 text-sm font-bold text-slate-800">
-                <div><Key>W A S D</Key> <span className="ml-1">Move</span></div>
-                <div><Key>Right-drag</Key> <span className="ml-1">Look around</span></div>
-                <div><Key>Space</Key> <span className="ml-1">Jump</span></div>
-                <div><Key>Shift</Key> <span className="ml-1">Sprint</span></div>
-                <div><Key>Left-click</Key> <span className="ml-1">Punch</span></div>
-                <div><Key>E</Key> <span className="ml-1">Interact</span></div>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 space-y-2.5">
-            {STEPS.map(([number, text]) => (
-              <div key={number} className="flex items-start gap-3">
-                <span
-                  className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-[#191827] bg-gradient-to-b from-sky-300 to-blue-500 text-xs font-black text-white shadow-[0_2px_0_rgba(0,0,0,0.25)]"
-                  style={OUTLINE}
+              {STEPS.map(([icon, title, text, colors], i) => (
+                <div
+                  key={title}
+                  className="flex items-center gap-3 rounded-2xl border-2 border-white/10 bg-white/[0.07] p-2.5 shadow-[inset_0_-3px_0_rgba(0,0,0,0.25)]"
                 >
-                  {number}
-                </span>
-                <p className="pt-0.5 text-sm font-bold leading-snug text-[#25243a] sm:text-base">{text}</p>
+                  <span
+                    className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-[3px] border-[#191827] text-2xl shadow-[0_3px_0_rgba(0,0,0,0.4)]"
+                    style={{ background: `linear-gradient(to bottom, ${colors[0]}, ${colors[1]})` }}
+                  >
+                    {icon}
+                    <span
+                      className="absolute -left-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full border-2 border-[#191827] bg-white text-[10px] font-black text-[#191827]"
+                    >
+                      {i + 1}
+                    </span>
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-sm text-white sm:text-base" style={OUTLINE}>
+                      {title}
+                    </div>
+                    <div className="text-xs font-semibold leading-snug text-slate-300 sm:text-[13px]">{text}</div>
+                  </div>
+                </div>
+              ))}
+
+              <div className="mt-1 rounded-2xl border-2 border-white/10 bg-black/25 p-3">
+                <div className="mb-2 text-xs text-sky-200" style={OUTLINE}>
+                  🎮 {touch ? 'Touch controls' : 'Controls'}
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                  {controls.map(([k, does]) => (
+                    <Control key={k} k={k} does={does} />
+                  ))}
+                </div>
               </div>
-            ))}
+            </div>
+
+            {/* The rings. */}
+            <RingsCard touch={touch} />
           </div>
+        </div>
 
-          <RingsCard touch={touch} />
-
+        <div className="shrink-0 border-t-2 border-white/10 bg-black/20 px-4 pb-3 pt-3 text-center">
           <button
             type="button"
             autoFocus
             onClick={close}
-            className="mx-auto mt-5 flex min-h-14 w-full max-w-xs items-center justify-center rounded-2xl border-[4px] border-[#191827] bg-gradient-to-b from-lime-300 to-green-500 px-5 py-2 text-2xl text-white shadow-[0_5px_0_rgba(0,0,0,0.45)] transition hover:-translate-y-0.5 hover:brightness-105 active:translate-y-1 active:shadow-[0_1px_0_rgba(0,0,0,0.45)]"
+            className="mx-auto flex min-h-12 w-full max-w-xs items-center justify-center rounded-2xl border-[4px] border-[#191827] bg-gradient-to-b from-lime-300 to-green-500 px-5 py-1.5 text-2xl text-white shadow-[0_5px_0_rgba(0,0,0,0.45)] transition hover:-translate-y-0.5 hover:brightness-105 active:translate-y-1 active:shadow-[0_1px_0_rgba(0,0,0,0.45)]"
             style={OUTLINE}
           >
             Let&apos;s play!
           </button>
-          <p className="mt-2 text-center text-xs font-semibold text-slate-500">
-            Open this again any time with the Guide button (G).
-          </p>
+          <p className="mt-1.5 text-[11px] font-semibold text-slate-400">Open this again any time with the Guide button (G).</p>
         </div>
       </section>
     </div>
