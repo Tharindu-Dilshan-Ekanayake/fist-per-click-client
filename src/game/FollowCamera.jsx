@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { Vector3 } from 'three'
 
 import { readTurn } from './input'
+import { CAMERA_RAY } from './physicsGroups'
 import { playerPosition } from './playerAnchor'
 import { useSettings } from './settings'
 
@@ -133,6 +134,15 @@ export function FollowCamera({ bodyRef, anchorRef }) {
   const initialised = useRef(false)
   /** Reused across frames; a new Ray every frame would churn the heap. */
   const ray = useRef(null)
+
+  // Development only: the orbit, for setting up a view from the console.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return undefined
+    window.__fpcOrbit = orbit.current
+    return () => {
+      delete window.__fpcOrbit
+    }
+  }, [])
 
   useEffect(() => {
     const el = gl.domElement
@@ -340,7 +350,7 @@ export function FollowCamera({ bodyRef, anchorRef }) {
     if (teleported && initialised.current) {
       // A portal (or a Win pad's trip home) drops you facing whatever way you
       // happened to be looking before - reset to dead behind, so you land looking
-      // straight ahead (a stage gate, the Infinity Cave's wall) instead of sideways
+      // straight ahead (a stage gate) instead of sideways
       // or backwards.
       orbit.current.yaw = 0
       orbit.current.pitch = START_PITCH
@@ -382,7 +392,7 @@ export function FollowCamera({ bodyRef, anchorRef }) {
       s.zoom + COLLIDE_PAD,
       true,
       rapier.QueryFilterFlags.EXCLUDE_SENSORS,
-      undefined,
+      CAMERA_RAY,
       undefined,
       body,
     )

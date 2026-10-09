@@ -26,6 +26,27 @@ const NAMED = {
   orange: { stud: ['#ff8f2e'], cells: 1 },
   mushroomCap: { color: '#e8392d' },
   stem: { color: '#f5efe2' },
+  // The spawn plaza: pale paving, and the gold and red rings round the statue.
+  plaza: { stud: ['#ece7f4', '#ded8ec'] },
+  plazaRing: { stud: ['#ffd76a', '#f5c242'] },
+  plazaInner: { stud: ['#ff6a5a', '#f05545'] },
+  statueBase: { stud: ['#3a2a5c'], cells: 1 },
+  statueTop: { stud: ['#ffd23f'], cells: 1 },
+  flowerRed: { stud: ['#ff4a6a'], cells: 1 },
+  flowerYellow: { stud: ['#ffd23f'], cells: 1 },
+  flowerPink: { stud: ['#ff8ad8'], cells: 1 },
+  // The arena gate into the stages.
+  gateRed: { stud: ['#b3202a', '#a51d27'] },
+  gateGold: { stud: ['#ffcf3a', '#f2bb24'] },
+  gateDark: { stud: ['#3a0d14', '#320b11'] },
+  bannerRed: { stud: ['#e8352d'], cells: 1 },
+  bannerBlue: { stud: ['#2f6ee8'], cells: 1 },
+  carpet: { stud: ['#d7262f', '#cc222b'] },
+  // The fight district's stands.
+  standStep: { stud: ['#3a3f6a', '#343960'] },
+  seatRed: { stud: ['#ff3b3b'], cells: 1 },
+  seatBlue: { stud: ['#2f7cff'], cells: 1 },
+  seatYellow: { stud: ['#ffd23f'], cells: 1 },
 }
 
 function studMaterial(colors, cells = 2, studsPerCell = 4) {

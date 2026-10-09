@@ -2,6 +2,8 @@ import { Client } from '@colyseus/sdk'
 import { create } from 'zustand'
 
 import { waitForSDK } from '../bloxity/sdk'
+import { dropFx } from '../game/fightFx'
+import { clearRings, markRingStart, ringEvents, setRingHp, setRings } from '../game/ringState'
 import { hosting, LOCAL_SERVER_URL, matchmakerOptions, viaMatchmaker } from './hosting'
 import { addSnapshot, newTrack } from './snapshots'
 
@@ -26,7 +28,7 @@ const RETRY_MS = [1000, 2000, 5000, 10000]
 /**
  * status: 'connecting' | 'online' | 'offline'
  * lobby: { id, name, max } while online
- * players: the *other* players in our lobby, by id: { name, avatar, gun, pet, trainer, footprints }
+ * players: the *other* players in our lobby, by id: { name, avatar, glove, pet, trainer, footprints }
  */
 export const useLobby = create(() => ({ status: 'connecting', lobby: null, selfId: null, players: {} }))
 
@@ -37,10 +39,17 @@ export const useLobby = create(() => ({ status: 'connecting', lobby: null, selfI
  */
 export const remoteStates = new Map()
 
+/**
+ * Where each other player is being drawn this frame (RemotePlayers writes it), by id:
+ * `{ x, y, z }`. The boxing rings read it to face an opponent and to put the punch
+ * bursts on them.
+ */
+export const remotePositions = new Map()
+
 /** Only used without the matchmaker (local development): one fixed server. */
 const localClient = viaMatchmaker ? null : new Client(LOCAL_SERVER_URL.replace(/^http/, 'ws'))
 let room = null
-let profile = { name: 'Player', avatar: null, gun: null, pet: null, trainer: null, footprints: null }
+let profile = { name: 'Player', avatar: null, glove: null, pet: null, trainer: null, footprints: null, aura: null, level: 1 }
 let stopped = true
 let retries = 0
 let retryTimer = null
@@ -51,16 +60,18 @@ let connectId = 0
 
 function profileOf(player, previous) {
   // Keep the same avatar object when it hasn't changed, so the model isn't rebuilt
-  // just because the player switched guns.
+  // just because the player switched gloves.
   const avatar =
     previous && JSON.stringify(previous.avatar) === JSON.stringify(player.avatar) ? previous.avatar : player.avatar
   return {
     name: player.name,
     avatar,
-    gun: player.gun,
+    glove: player.glove,
     pet: player.pet,
     trainer: player.trainer,
     footprints: player.footprints ?? null,
+    aura: player.aura ?? null,
+    level: player.level ?? 1,
   }
 }
 
@@ -79,6 +90,7 @@ function attach(joined) {
       remoteStates.set(player.id, newTrack(player.p, player.sw, performance.now()))
     }
     useLobby.setState({ status: 'online', lobby: message.lobby, selfId: message.id, players: next })
+    setRings(message.rings)
   })
   joined.onMessage('join', (message) => {
     remoteStates.set(message.player.id, newTrack(message.player.p, message.player.sw, performance.now()))
@@ -86,6 +98,8 @@ function attach(joined) {
   })
   joined.onMessage('leave', (message) => {
     remoteStates.delete(message.id)
+    remotePositions.delete(message.id)
+    dropFx(message.id)
     const next = { ...useLobby.getState().players }
     delete next[message.id]
     useLobby.setState({ players: next })
@@ -104,10 +118,27 @@ function attach(joined) {
       if (state) addSnapshot(state, [x, y, z], sw, ts, performance.now())
     }
   })
+  joined.onMessage('rings', (message) => setRings(message.rings))
+  joined.onMessage('ringHit', (message) => {
+    setRingHp(message.r, message.hp)
+    ringEvents.hit(message)
+  })
+  joined.onMessage('ringStart', (message) => {
+    // The fighters are in from this moment, before the next snapshot says so: the
+    // teleport into the ring must not meet a ring that still thinks they are outside.
+    markRingStart(message.r, message.f, message.mh)
+    ringEvents.start(message)
+  })
+  joined.onMessage('ringCancel', (message) => ringEvents.cancel(message))
+  joined.onMessage('ringKO', (message) => ringEvents.ko(message))
+  joined.onMessage('ringDeny', (message) => ringEvents.deny(message))
+  joined.onMessage('ringMiss', (message) => ringEvents.miss(message))
   joined.onLeave(() => {
     if (room !== joined) return
     room = null
     remoteStates.clear()
+    remotePositions.clear()
+    clearRings()
     useLobby.setState({ status: 'offline', lobby: null, selfId: null, players: {} })
     retry()
   })
@@ -164,19 +195,30 @@ export function disconnectLobby() {
   room = null
   joined?.leave()
   remoteStates.clear()
+  remotePositions.clear()
+  clearRings()
   useLobby.setState({ status: 'offline', lobby: null, selfId: null, players: {} })
 }
 
-/** Our name / avatar / gun. Remembered for (re)connects and sent now if online. */
+/** Our name / avatar / gloves. Remembered for (re)connects and sent now if online. */
 export function updateProfile(next) {
   profile = next
   room?.send('profile', next)
 }
 
 /**
- * Our position (the body's centre), how many shots we've fired, and the time (ms,
+ * Our position (the body's centre), how many punches we've thrown, and the time (ms,
  * our clock) that position is for.
  */
 export function sendState(p, sw, ts = performance.now()) {
   room?.send('state', { p, sw, ts: Math.round(ts) })
 }
+
+/** Stepped onto ring `r`'s pad `slot` (0 red, 1 blue), with this much Strength. */
+export const sendPadEnter = (r, slot, power) => room?.send('padEnter', { r, slot, power })
+/** Stepped off it. */
+export const sendPadLeave = (r, slot) => room?.send('padLeave', { r, slot })
+/** Threw a punch in it. */
+export const sendRingPunch = (r, power) => room?.send('ringPunch', { r, power })
+/** Whether there is a server to talk to right now. */
+export const lobbyOnline = () => room !== null

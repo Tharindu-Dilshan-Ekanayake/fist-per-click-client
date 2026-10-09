@@ -16,7 +16,7 @@ const ROWS = 10
 const BOARDS = [
   { key: 'wins', title: 'TOP WINS', icon: '🏆', colors: ['#ffd84a', '#f08c00'], mine: (g) => g.wins },
   { key: 'rebirths', title: 'TOP REBIRTHS', icon: '🔄', colors: ['#c58bff', '#7a3fe4'], mine: (g) => g.rebirths },
-  { key: 'bosses', title: 'BOSS SLAYERS', icon: '💀', colors: ['#ff7a6a', '#d02b2b'], mine: (g) => g.bossLevel - 1 },
+  { key: 'fights', title: 'TOP FIGHTERS', icon: '🥊', colors: ['#ff7a6a', '#d02b2b'], mine: (g) => g.ringWins },
 ]
 
 /** Gold, silver and bronze for the top three; the rest wear the board's colour. */
@@ -174,7 +174,7 @@ function Board({ board, position, size, rotationY }) {
 }
 
 /**
- * The leaderboards beside the welcome board: Wins, Rebirths and bosses beaten, the
+ * The leaderboards in the spawn plaza: Wins, Rebirths and fights won, the
  * top ten signed-in players on each (see game/leaderboard.js), and your own score
  * along the bottom.
  *

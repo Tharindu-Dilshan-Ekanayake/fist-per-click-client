@@ -19,7 +19,13 @@ import './index.css'
  * `loadGameFont` resolves either way and gives up after a few seconds, so a font
  * that will not load costs the game its lettering and nothing else.
  */
-loadGameFont().then(() => {
+loadGameFont().then(async () => {
+  // Development only: `?lab=gloves` / `?lab=pets` shows the models on their own.
+  if (import.meta.env.DEV && new URLSearchParams(location.search).has('lab')) {
+    const { default: Lab } = await import('./dev/Lab.jsx')
+    createRoot(document.getElementById('root')).render(<Lab />)
+    return
+  }
   createRoot(document.getElementById('root')).render(
     <StrictMode>
       {/* Slug comes from VITE_GAME_SLUG in client/.env — see .env.example. */}

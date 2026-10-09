@@ -2,8 +2,8 @@ import { tidy } from './format'
 
 /**
  * Stage wall balance. Every stage is a corridor of solid, numbered walls; you break
- * each by shooting it, and every shot deals your current Ammo as damage. Walls heal
- * between shots, so each needs roughly a tenth of its health in Ammo to get
+ * each by punching it, and every punch deals your current Strength as damage. Walls heal
+ * between punches, so each needs roughly a tenth of its health in Strength to get
  * through. Broken walls stay down until you're back in the lobby.
  */
 
@@ -48,14 +48,14 @@ export const WALL_RESET_DELAY_S = 10
  *
  * Gold, on the right, is the normal pad: always open, pays the base Wins.
  *
- * Blue, on the left, is the VIP pad. It pays double and asks for no Ammo at all,
+ * Blue, on the left, is the VIP pad. It pays double and asks for no Strength at all,
  * but it stays shut until the player buys the VIP Wins Pad pass with Wins (see
  * game/passes.js) — one purchase opens the blue pad in front of every stage, for
- * good. `pass` is what makes a pad pass-gated; `ammo` is then ignored.
+ * good. `pass` is what makes a pad pass-gated; `strength` is then ignored.
  */
 export const WIN_PADS = [
-  { id: 'blue', side: -1, color: '#2fd4ff', fill: ['#e8fdff', '#35d8ff'], wins: 2, ammo: 0, pass: 'vipWins' },
-  { id: 'gold', side: 1, color: '#ffe14a', fill: ['#fff6a8', '#ffc21a'], wins: 1, ammo: 0 },
+  { id: 'blue', side: -1, color: '#2fd4ff', fill: ['#e8fdff', '#35d8ff'], wins: 2, strength: 0, pass: 'vipWins' },
+  { id: 'gold', side: 1, color: '#ffe14a', fill: ['#fff6a8', '#ffc21a'], wins: 1, strength: 0 },
 ]
 
 /** Seconds to hold E on a Win pad to cash in. */
@@ -65,9 +65,9 @@ export const HOLD_S = 1.2
  * What the gold pad at the end of each stage pays, stage 1 first.
  *
  * The first four are the ones the reference game opens with - 1, 5, 10, 50 - and are
- * meant to be felt: the first gun costs 5 Wins, so stage 2 buys it in one trip.
+ * meant to be felt: the first new gloves cost 5 Wins, so stage 2 buys them in one trip.
  * After that each stage pays four to five times the last, which is what keeps the
- * gun shop's prices (they climb about 2.4x a gun, two or three guns a stage) within
+ * glove shop's prices (they climb about 2.4x a pair, two or three pairs a stage) within
  * reach of whoever is pushing deeper rather than whoever is grinding stage 1.
  */
 export const STAGE_WINS = [
@@ -88,21 +88,21 @@ export const SPACE_STAGE_WINS = 200000000000
 export const padWins = (number, pad) =>
   (isSpaceWall(number) ? SPACE_STAGE_WINS : stageWins(wallStage(number - 1))) * pad.wins
 
-/** Ammo needed before a pad pays out. Zero for both of today's pads. */
-export const padAmmo = (number, pad) => wallHp(number) * pad.ammo
+/** Strength needed before a pad pays out. Zero for both of today's pads. */
+export const padStrength = (number, pad) => wallHp(number) * pad.strength
 
 /**
  * Whether this pad will pay out right now.
  *
- * A VIP pad opens on the pass and nothing else; a normal one opens on Ammo. Takes
+ * A VIP pad opens on the pass and nothing else; a normal one opens on Strength. Takes
  * the game state rather than reading the store itself, so the pads' render path and
  * `claimPad` can both ask the same question of the same snapshot.
  *
  * @param {number} number the wall the pad stands before
  * @param {object} pad an entry of WIN_PADS
- * @param {{ ammo: number, ownedPasses: string[] }} state
+ * @param {{ strength: number, ownedPasses: string[] }} state
  */
 export function padUnlocked(number, pad, state) {
   if (pad.pass) return state.ownedPasses.includes(pad.pass)
-  return state.ammo >= padAmmo(number, pad)
+  return state.strength >= padStrength(number, pad)
 }

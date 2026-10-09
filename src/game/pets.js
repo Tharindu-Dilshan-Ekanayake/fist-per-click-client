@@ -112,7 +112,7 @@ export const MAX_EQUIPPED = PETS.length
  * What the pets following you multiply your Wins by — 1 with none out. Their
  * bonuses add up, so a whole squad beats any one of them alone: that's the
  * number the Pets panel shows at the top, and every payout goes through it
- * (see claimPad and breakCaveWall in gameStore).
+ * (see claimPad and winRingFight in gameStore).
  *
  * @param {string[]} ids the equipped pets' ids
  */

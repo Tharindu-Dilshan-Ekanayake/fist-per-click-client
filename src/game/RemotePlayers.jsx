@@ -1,18 +1,23 @@
 import { Billboard } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { Suspense, useRef } from 'react'
+import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Quaternion, Vector3 } from 'three'
 
-import { remoteStates, useLobby } from '../net/lobbyClient'
+import { remotePositions, remoteStates, useLobby } from '../net/lobbyClient'
 import { isFootprintSet } from './footprintSets'
 import { FootprintTrail } from './Footprints'
 import { playTrack } from '../net/snapshots'
-import { getGun, shotKind } from './guns'
+import { PUNCH_S, punchFor } from './avatarRig'
+import { applyFx, fxFor } from './fightFx'
+import { getGlove, punchKind } from './gloves'
 import { getPet } from './pets'
+import { ringOfPlayer, useRings } from './ringState'
 import { playSound } from './sound'
 import { AvatarBoundary, StandInBody } from './AvatarBoundary'
-import { PLAYER_HEIGHT, SHOT_DURATION_S } from './Player'
+import { PLAYER_HEIGHT } from './Player'
 import PlayerAvatar from './PlayerAvatar'
+import PlayerFx from './PlayerFx'
+import { getAura } from './auras'
 import { Label } from './world/Effects'
 import { PetModel } from './world/PetModel'
 
@@ -21,7 +26,7 @@ const _petQuat = new Quaternion()
 const _petBefore = new Vector3()
 const _up = new Vector3(0, 1, 0)
 const _sample = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 }
-/** Other players' shots can be heard up to this far from the camera. */
+/** Other players' punches can be heard up to this far from the camera. */
 const HEAR_DISTANCE = 25
 /** How far behind a remote player their pet trails, once it's caught up. */
 const PET_HEEL_DISTANCE = 1.7
@@ -48,8 +53,9 @@ function RemotePlayer({ id, player }) {
   const visual = useRef(null)
   // maxSpeed a little under the walk speed (6), so small wobbles in their played-back
   // speed don't shrink the stride; a sprint is past it too, so both get the full cycle.
-  const motion = useRef({ time: 0, speed: 0, grounded: true, maxSpeed: 5.5, shot: Infinity })
-  const shots = useRef({ sw: null, at: -Infinity })
+  const motion = useRef({ time: 0, speed: 0, grounded: true, maxSpeed: 5.5, guard: 0 })
+  /** Their punch count as last seen, and when each hand last threw, and what. */
+  const punches = useRef({ sw: null, rAt: -Infinity, lAt: -Infinity, styleR: 'jab', styleL: 'jab' })
   const pet = useRef(null)
   const petFacing = useRef(0)
   const petInitialised = useRef(false)
@@ -58,6 +64,16 @@ function RemotePlayer({ id, player }) {
   const petWalkRef = useRef({ speed: 0 })
   /** Their footprints waiting to be drawn, and how far they have walked since the last. */
   const steps = useRef([])
+  /** The middles of their two fists, for their gloves' trails. */
+  const fists = useRef({})
+  /** Their level as last seen, and when it last went up. */
+  const level = useRef({ seen: player.level ?? 1, at: -Infinity })
+  const levelUpRef = useMemo(() => ({ get current() { return level.current.at } }), [])
+  useEffect(() => {
+    const l = level.current
+    if ((player.level ?? 1) > l.seen) l.at = performance.now() / 1000
+    l.seen = player.level ?? 1
+  }, [player.level])
   const stride = useRef({ walked: 0, side: 1, x: null, z: null })
 
   useFrame((state, delta) => {
@@ -68,14 +84,29 @@ function RemotePlayer({ id, player }) {
     const now = performance.now()
     const s = playTrack(track, now, delta * 1000, _sample)
     group.position.set(s.x, s.y, s.z)
+    let seen = remotePositions.get(id)
+    if (!seen) {
+      seen = { x: 0, y: 0, z: 0 }
+      remotePositions.set(id, seen)
+    }
+    seen.x = s.x
+    seen.y = s.y
+    seen.z = s.z
 
     const m = motion.current
     const horizontal = Math.hypot(s.vx, s.vz)
     m.time += delta
     m.speed += (horizontal - m.speed) * (1 - Math.exp(-delta * 12))
     m.grounded = Math.abs(s.vy) < 1.5
-    if (visual.current && horizontal > 0.5) {
-      _quat.setFromAxisAngle(_up, Math.atan2(s.vx, s.vz))
+    // Facing: where they are going, or - standing in a ring - their opponent.
+    const fight = ringOfPlayer(useRings.getState().rings, id)
+    const opponentId = fight ? useRings.getState().rings[fight.index].f[1 - fight.slot] : null
+    const opponent = opponentId ? (opponentId === useLobby.getState().selfId ? ownPosition : remotePositions.get(opponentId)) : null
+    let yaw = null
+    if (horizontal > 0.5) yaw = Math.atan2(s.vx, s.vz)
+    else if (opponent) yaw = Math.atan2(opponent.x - s.x, opponent.z - s.z)
+    if (visual.current && yaw !== null) {
+      _quat.setFromAxisAngle(_up, yaw)
       visual.current.quaternion.slerp(_quat, 1 - Math.pow(0.001, delta))
     }
 
@@ -124,23 +155,44 @@ function RemotePlayer({ id, player }) {
       pet.current.quaternion.slerp(_petQuat, 1 - Math.pow(0.001, delta * 0.8))
     }
 
-    // A new shot count means they just fired.
-    const sw = shots.current
-    if (track.sw !== sw.sw) {
-      if (sw.sw !== null) {
-        sw.at = now / 1000
+    // A higher punch count means they just threw - one punch per step up, each to
+    // the hand whose turn it is, the same as on their own screen.
+    const pu = punches.current
+    const t = now / 1000
+    if (track.sw !== pu.sw) {
+      if (pu.sw !== null && track.sw > pu.sw) {
+        for (let n = Math.max(pu.sw + 1, track.sw - 1); n <= track.sw; n++) {
+          const { right, both, style } = punchFor(n, !m.grounded)
+          if (right || both) {
+            pu.rAt = t
+            pu.styleR = style
+          }
+          if (!right || both) {
+            pu.lAt = t
+            pu.styleL = style
+          }
+        }
         // Heard when they're close, fading out with distance.
         const distance = state.camera.position.distanceTo(group.position)
         if (distance < HEAR_DISTANCE) {
-          playSound('shoot', { kind: shotKind(getGun(player.gun)), gain: 0.4 * (1 - distance / HEAR_DISTANCE) })
+          playSound('punch', { kind: punchKind(getGlove(player.glove)), gain: 0.4 * (1 - distance / HEAR_DISTANCE) })
         }
       }
-      sw.sw = track.sw
+      pu.sw = track.sw
     }
-    m.shot = (now / 1000 - sw.at) / SHOT_DURATION_S
+    m.punchR = (t - pu.rAt) / PUNCH_S
+    m.punchL = (t - pu.lAt) / PUNCH_S
+    m.styleR = pu.styleR
+    m.styleL = pu.styleL
+    const fighting = fight || player.trainer || t - Math.max(pu.rAt, pu.lAt) < 1.6
+    m.guard += ((fighting ? 1 : 0) - m.guard) * (1 - Math.exp(-delta * 6))
+    applyFx(m, fxFor(id), t)
   })
 
   const petDef = player.pet ? getPet(player.pet) : null
+  const glove = getGlove(player.glove)
+  const aura = getAura(player.aura)
+  const fighting = useRings((s) => s.rings.some((r) => r.s !== 'open' && r.f.includes(id)))
 
   const standIn = <StandInBody height={PLAYER_HEIGHT} />
   return (
@@ -153,20 +205,25 @@ function RemotePlayer({ id, player }) {
                 remote
                 equipped={player.avatar?.equipped ?? null}
                 proportions={player.avatar?.proportions}
-                gunId={player.gun}
+                gloveId={player.glove}
+                fistsRef={fists}
                 targetHeight={PLAYER_HEIGHT}
                 motionRef={motion}
               />
             </Suspense>
           </AvatarBoundary>
         </group>
-        <Billboard position={[0, PLAYER_HEIGHT / 2 + 0.55, 0]}>
-          <Label lines={[player.name]} position={[0, 0, 0]} size={[3, 0.6]} style={{ width: 512 }} />
-        </Billboard>
+        {/* In a ring the fight's own bar carries the name (see RingDirector). */}
+        {!fighting && (
+          <Billboard position={[0, PLAYER_HEIGHT / 2 + 0.55, 0]}>
+            <Label lines={[player.name]} position={[0, 0, 0]} size={[3, 0.6]} style={{ width: 512 }} />
+          </Billboard>
+        )}
       </group>
       {isFootprintSet(player.footprints) && (
-        <FootprintTrail key={player.footprints} gunId={player.footprints} stepsRef={steps} />
+        <FootprintTrail key={player.footprints} gloveId={player.footprints} stepsRef={steps} />
       )}
+      <PlayerFx followRef={body} motionRef={motion} fistsRef={fists} glove={glove} aura={aura} levelUpRef={levelUpRef} />
       {petDef && (
         <group ref={pet} scale={1}>
           <PetModel pet={petDef} walkRef={petWalkRef} />
@@ -176,9 +233,22 @@ function RemotePlayer({ id, player }) {
   )
 }
 
+/**
+ * Where our own player is, for the other fighter in a ring to face. RemotePlayers
+ * keeps it up to date from the player's body.
+ */
+const ownPosition = { x: 0, y: 0, z: 0 }
+
 /** Everyone else in our lobby. */
-export function RemotePlayers() {
+export function RemotePlayers({ bodyRef }) {
   const players = useLobby((s) => s.players)
+  useFrame(() => {
+    const p = bodyRef?.current?.translation()
+    if (!p) return
+    ownPosition.x = p.x
+    ownPosition.y = p.y
+    ownPosition.z = p.z
+  })
   return Object.entries(players).map(([id, player]) => <RemotePlayer key={id} id={id} player={player} />)
 }
 

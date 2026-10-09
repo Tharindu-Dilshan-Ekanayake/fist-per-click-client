@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 
 import { useTouchDevice } from '../game/device'
 import { useGame } from '../game/gameStore'
-import { requestShot, setTouchJump, setTouchMove, setTouchSprint } from '../game/input'
+import { requestPunch, setTouchJump, setTouchMove, setTouchSprint } from '../game/input'
 import { CONTROL_MARGIN, STICK_SIZE, useStripHeight, useTouchScale } from './touchLayout'
 
 /**
@@ -216,12 +216,12 @@ export function TouchControls() {
 
         {/* The big one, because in a clicker this is the whole game. */}
         <ActionButton
-          label="🔫"
+          label="👊"
           hint="SHOOT"
           size={big}
           scale={scale}
           tone="border-white/70 bg-amber-300 text-slate-900"
-          onDown={requestShot}
+          onDown={requestPunch}
         />
       </div>
     </div>

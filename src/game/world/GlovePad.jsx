@@ -6,14 +6,14 @@ import { AdditiveBlending } from 'three'
 
 import { formatNumber } from '../format'
 import { useGame } from '../gameStore'
-import GunModel from '../GunModel'
-import { glowColor } from '../guns'
+import { glowColor } from '../gloves'
+import GloveModel from '../GloveModel'
 import { Label } from './Effects'
 import InteractPrompt from './InteractPrompt'
 import PadGlow from './PadGlow'
 import { radialGlowTexture, shade } from './textures'
 
-/** Pad colour: red not owned (pulsing when affordable), yellow owned, purple equipped. */
+/** Pad colour: red not owned (pulsing when affordable), yellow owned, purple worn. */
 const STATUS_COLOR = {
   equipped: '#b05cff',
   owned: '#ffd23f',
@@ -21,7 +21,7 @@ const STATUS_COLOR = {
   locked: '#d9302b',
 }
 
-/** How brightly the pad's glow shines: dim while out of reach, brightest in hand. */
+/** How brightly the pad's glow shines: dim while out of reach, brightest when worn. */
 const STATUS_GLOW = {
   equipped: 1.15,
   owned: 0.85,
@@ -32,42 +32,44 @@ const STATUS_GLOW = {
 const GOLD = ['#fff6a8', '#ffc21a']
 const GEM = ['#d6f6ff', '#2fa8ff']
 const PAD_TOP = 0.26
-/** Shop guns are shown bigger than held ones so the row reads from the path. */
-const DISPLAY_SCALE = 1.6
-/** Height the gun floats at over the pad. */
-const DISPLAY_Y = 1.25
+/** Shop gloves are shown bigger than worn ones so the row reads from the path. */
+const DISPLAY_SCALE = 1.9
+/** Height the pair floats at over the pad. */
+const DISPLAY_Y = 1.45
+/** Half the gap between the two gloves of the pair. */
+const PAIR_GAP = 0.3
 
 /**
- * Shop slot: a gun turning slowly over a glowing hexagon pad, with its price, name
- * and Ammo per click floating above. Walking up to it shows an E prompt to buy the
- * gun, or equip it if already owned.
+ * Shop slot: a pair of gloves turning slowly over a glowing hexagon pad, knuckles to
+ * the sky, with their price, name and Strength per punch floating above. Walking up
+ * to it shows an E prompt to buy them, or put them on if already owned.
  *
- * @param {{ gun: object, position: number[] }} props
+ * @param {{ glove: object, position: number[] }} props
  */
-export function GunPad({ gun, position }) {
+export function GlovePad({ glove, position }) {
   const status = useGame((s) =>
-    s.equipped === gun.id
+    s.equipped === glove.id
       ? 'equipped'
-      : s.owned.includes(gun.id)
+      : s.owned.includes(glove.id)
         ? 'owned'
-        : s.wins >= gun.cost
+        : s.wins >= glove.cost
           ? 'affordable'
           : 'locked',
   )
-  const gunRef = useRef(null)
+  const pairRef = useRef(null)
   const padMaterial = useRef(null)
   const aura = useRef(null)
 
-  /** Each gun glows in its own colour. */
-  const glow = glowColor(gun)
-  /** Roughly how tall the floating gun and its glow stand. */
-  const height = DISPLAY_Y + 0.6 * gun.size
+  /** Each pair glows in its own colour. */
+  const glow = glowColor(glove)
+  /** Roughly how tall the floating pair and its glow stand. */
+  const height = DISPLAY_Y + 0.7 * glove.size
 
   useFrame(({ clock }, delta) => {
     const t = clock.elapsedTime
-    if (gunRef.current) {
-      gunRef.current.rotation.y += delta * 0.6
-      gunRef.current.position.y = DISPLAY_Y + Math.sin(t * 1.4 + position[0]) * 0.08
+    if (pairRef.current) {
+      pairRef.current.rotation.y += delta * 0.6
+      pairRef.current.position.y = DISPLAY_Y + Math.sin(t * 1.4 + position[0] + position[2]) * 0.08
     }
     if (padMaterial.current) {
       padMaterial.current.emissiveIntensity =
@@ -76,19 +78,19 @@ export function GunPad({ gun, position }) {
     if (aura.current) aura.current.opacity = 0.3 + 0.12 * Math.sin(t * 2 + position[0])
   })
 
-  const inRange = useGame((s) => s.interact?.kind === 'gun' && s.interact.id === gun.id)
+  const inRange = useGame((s) => s.interact?.kind === 'glove' && s.interact.id === glove.id)
 
   const onEnter = ({ other }) => {
-    if (other.rigidBodyObject?.name === 'player') useGame.getState().setInteract('gun', gun.id)
+    if (other.rigidBodyObject?.name === 'player') useGame.getState().setInteract('glove', glove.id)
   }
   const onExit = ({ other }) => {
-    if (other.rigidBodyObject?.name === 'player') useGame.getState().clearInteract('gun', gun.id)
+    if (other.rigidBodyObject?.name === 'player') useGame.getState().clearInteract('glove', glove.id)
   }
 
-  const price = gun.cost === 0 ? 'Free' : `🏆 ${formatNumber(gun.cost)} Wins`
+  const price = glove.cost === 0 ? 'Free' : `🏆 ${formatNumber(glove.cost)} Wins`
   const prompt = {
-    equipped: { action: 'Equipped', tone: 'done', detail: 'In your hand' },
-    owned: { action: 'Equip', tone: 'normal', detail: 'You own this gun' },
+    equipped: { action: 'Wearing', tone: 'done', detail: 'On your hands' },
+    owned: { action: 'Wear', tone: 'normal', detail: 'You own these gloves' },
     affordable: { action: 'Buy', tone: 'normal', detail: price },
     locked: { action: 'Buy', tone: 'warn', detail: `${price} · not enough Wins` },
   }[status]
@@ -96,15 +98,15 @@ export function GunPad({ gun, position }) {
   const color = STATUS_COLOR[status]
   const priceLine =
     status === 'equipped'
-      ? { text: 'EQUIPPED', fill: ['#f0dcff', '#c07bff'] }
+      ? { text: 'WEARING', fill: ['#f0dcff', '#c07bff'] }
       : status === 'owned'
         ? { text: 'OWNED', fill: GOLD }
-        : gun.cost === 0
+        : glove.cost === 0
           ? { text: 'FREE', fill: ['#ffffff', '#b8ffb0'] }
-          : { text: `${formatNumber(gun.cost)} Wins`, icon: 'trophy', fill: GOLD }
+          : { text: `${formatNumber(glove.cost)} Wins`, icon: 'trophy', fill: GOLD }
 
   return (
-    <group position={position}>
+    <group position={position} name="glovepad">
       {/* Hexagon pad: dark rim with a glowing top. */}
       <mesh position={[0, 0.09, 0]} rotation={[0, Math.PI / 6, 0]} receiveShadow>
         <cylinderGeometry args={[1.6, 1.7, 0.18, 6]} />
@@ -121,15 +123,20 @@ export function GunPad({ gun, position }) {
         />
       </mesh>
 
-      {/* Centred on its own middle, so it turns in place rather than round its grip. */}
-      <group ref={gunRef} position={[0, DISPLAY_Y, 0]} scale={DISPLAY_SCALE}>
-        <group position={[0, -0.05, -0.2 * gun.size]}>
-          <GunModel gun={gun} minGlow={0.3} />
+      {/* The pair, knuckles up, side by side, turning together. Flipped so the
+          knuckles point at the sky (the model's fist points down -Y). */}
+      <>
+      <group ref={pairRef} position={[0, DISPLAY_Y, 0]} scale={DISPLAY_SCALE}>
+        <group position={[-PAIR_GAP * glove.size, 0.2 * glove.size, 0]} rotation={[0, 0, Math.PI]}>
+          <GloveModel glove={glove} side={1} minGlow={0.3} shadows={false} />
+        </group>
+        <group position={[PAIR_GAP * glove.size, 0.2 * glove.size, 0]} rotation={[0, 0, Math.PI]}>
+          <GloveModel glove={glove} side={-1} minGlow={0.3} sparkles={false} shadows={false} />
         </group>
       </group>
 
-      {/* Neon rim and rings rising round the gun, in its colour, plus a soft aura
-          behind it. */}
+      {/* Neon rim and rings rising round the gloves, in their colour, plus a soft aura
+          behind them. */}
       <PadGlow
         color={glow}
         shape="hex"
@@ -137,12 +144,12 @@ export function GunPad({ gun, position }) {
         y={PAD_TOP + 0.01}
         rise={Math.max(2.4, height + 0.4)}
         level={STATUS_GLOW[status]}
-        sparkles={gun.glow ? 8 : 5}
-        phase={position[0]}
+        sparkles={glove.glow ? 8 : 5}
+        phase={position[0] + position[2]}
       />
       <Billboard position={[0, DISPLAY_Y, 0]}>
         <mesh>
-          <planeGeometry args={[2.2 * gun.size, 1.6 * gun.size]} />
+          <planeGeometry args={[2.4 * glove.size, 2 * glove.size]} />
           <meshBasicMaterial
             ref={aura}
             map={radialGlowTexture()}
@@ -155,22 +162,23 @@ export function GunPad({ gun, position }) {
           />
         </mesh>
       </Billboard>
+      </>
 
-      <Billboard position={[0, height + 1.35, 0]}>
+      <Billboard position={[0, height + 1.4, 0]}>
         <Label
           lines={[
-            ...(gun.vip ? [{ text: 'VIP', scale: 0.8, fill: GEM }] : []),
+            ...(glove.vip ? [{ text: 'VIP', scale: 0.8, fill: GEM }] : []),
             priceLine,
-            { text: gun.name, scale: 1.3 },
-            { text: `+${formatNumber(gun.ammo)} Ammo`, icon: 'ammo', fill: ['#ff9a9a', '#ff3030'] },
+            { text: glove.name, scale: 1.3 },
+            { text: `+${formatNumber(glove.power)} Strength`, icon: 'fist', fill: ['#ffd0d0', '#ff4040'] },
           ]}
           position={[0, 0, 0]}
-          size={[3.8, gun.vip ? 2.3 : 1.9]}
+          size={[3.8, glove.vip ? 2.3 : 1.9]}
           style={{ width: 512 }}
         />
       </Billboard>
 
-      {inRange && <InteractPrompt position={[0, 2.2, 0]} title={gun.name} {...prompt} />}
+      {inRange && <InteractPrompt position={[0, 2.4, 0]} title={glove.name} {...prompt} />}
 
       <RigidBody type="fixed" colliders={false}>
         <CuboidCollider
@@ -185,4 +193,4 @@ export function GunPad({ gun, position }) {
   )
 }
 
-export default GunPad
+export default GlovePad

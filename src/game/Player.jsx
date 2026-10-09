@@ -1,15 +1,19 @@
 import { useFrame } from '@react-three/fiber'
 import { CapsuleCollider, RigidBody, useRapier } from '@react-three/rapier'
-import { Suspense, useRef } from 'react'
+import { Suspense, useMemo, useRef } from 'react'
 import { Quaternion, Vector3 } from 'three'
 
 import { aim } from './aim'
 import { AvatarBoundary, StandInBody } from './AvatarBoundary'
-import { useBossFight } from './bossFight'
+import { PUNCH_S, punchFor } from './avatarRig'
+import { applyFx, fightFx, knockedOut } from './fightFx'
 import { leaveFootprint } from './footprintSets'
 import { useGame } from './gameStore'
 import { readInput } from './input'
 import PlayerAvatar from './PlayerAvatar'
+import PlayerFx from './PlayerFx'
+import { getAura } from './auras'
+import { getGlove } from './gloves'
 import { WALK_SPEED } from './progression'
 import { playSound } from './sound'
 import useKeyboard from './useKeyboard'
@@ -29,8 +33,14 @@ const SPRINT_MULTIPLIER = 1.6
  * enough to hop onto the 1.2-unit terrace steps.
  */
 const JUMP_VELOCITY = 7.6
-/** Length of one shot's recoil animation. Short: an auto clicker fires ten a second. */
-export const SHOT_DURATION_S = 0.22
+/** Seconds the gloves stay up after the last punch before the arms relax into a run. */
+const GUARD_HOLD_S = 1.6
+/** How far from a wall's middle the player steps in to punch it. */
+const WALL_STAND = 1.25
+/** How far from a ring opponent the player closes in to. */
+const RING_STAND = 1.5
+/** Close enough to where we are stepping to; stops the last few centimetres jittering. */
+const STEP_SLACK = 0.12
 /** Falling below this puts the player back at their spawn point. */
 const FALL_LIMIT_Y = -25
 /** Extra ray length past the capsule bottom; tolerates small ground gaps. */
@@ -65,6 +75,14 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
   // ref. Fall back to a local one when used standalone.
   const localBodyRef = useRef(null)
   const bodyRef = externalBodyRef || localBodyRef
+  const localAnchorRef = useRef(null)
+  const followRef = anchorRef || localAnchorRef
+  /** The middles of the two fists, for the gloves' trails (see PlayerFx). */
+  const fistsRef = useRef({})
+  const glove = getGlove(useGame((s) => s.equipped))
+  const aura = getAura(useGame((s) => s.aura))
+  /** When we last levelled up, read live from the store by PlayerFx. */
+  const levelUpRef = useMemo(() => ({ get current() { return useGame.getState().levelUpAt } }), [])
   const visualRef = useRef(null)
   useKeyboard()
   const { rapier, world } = useRapier()
@@ -75,7 +93,9 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
    * Motion state handed to the avatar so it can pose itself. A ref, not state:
    * this is written every frame and must not trigger a re-render.
    */
-  const motionRef = useRef({ time: 0, speed: 0, grounded: true, maxSpeed: MOVE_SPEED })
+  const motionRef = useRef({ time: 0, speed: 0, grounded: true, maxSpeed: MOVE_SPEED, guard: 1 })
+  /** When each hand last threw, and what: which hand is whose turn follows punchCount. */
+  const punches = useRef({ count: 0, rAt: -Infinity, lAt: -Infinity, styleR: 'jab', styleL: 'jab' })
   /** Walk-cycle phase (radians) and what the footstep and landing sounds track. */
   const stride = useRef({ phase: 0, beat: 0, airborne: 0, fallSpeed: 0 })
 
@@ -126,7 +146,8 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
     _input.set(k.x, 0, k.z)
 
     const linvel = body.linvel()
-    const staggered = useBossFight.getState().staggerUntil > performance.now()
+    // Knocked down in the ring: nobody walks off a knockout.
+    const staggered = knockedOut()
 
     const push = staggered ? 0 : _input.length()
     if (push > 0.02) {
@@ -165,14 +186,36 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
         visualRef.current.quaternion.slerp(_targetQuat, 1 - Math.pow(0.001, delta))
       }
     } else {
-      // Damp horizontal motion to a stop; don't touch the fall speed.
-      if (!staggered) body.setLinvel({ x: linvel.x * 0.8, y: linvel.y, z: linvel.z * 0.8 }, true)
-
-      // Training: turn to face the target. Beside a stage wall: turn to face the
-      // wall. In the boss arena: turn to face the boss.
+      // Damp horizontal motion to a stop; don't touch the fall speed - unless there
+      // is something to punch just out of reach, in which case step in to it: onto
+      // the spot in front of the bag while training, or up to the wall after a punch.
       const game = useGame.getState()
-      if (visualRef.current && (game.activeTrainer || game.nearWall || (game.inBossArena && aim.target))) {
-        const here = body.translation()
+      const here = body.translation()
+      let step = null
+      if (game.activeTrainer && game.trainSpot) {
+        step = [game.trainSpot[0] - here.x, game.trainSpot[1] - here.z]
+      } else if (game.nearWall && performance.now() / 1000 - game.punchAt < 0.6) {
+        const side = here.z > game.nearWall.z ? 1 : -1
+        const dz = game.nearWall.z + side * WALL_STAND - here.z
+        if (dz * side < 0) step = [0, dz]
+      } else if (aim.ring && aim.target && performance.now() / 1000 - game.punchAt < 0.6) {
+        // In the ring: close in on the opponent, to a glove's length away.
+        const dx = aim.target[0] - here.x
+        const dz = aim.target[2] - here.z
+        const d = Math.hypot(dx, dz)
+        if (d > RING_STAND + STEP_SLACK) step = [(dx / d) * (d - RING_STAND), (dz / d) * (d - RING_STAND)]
+      }
+      const gap = step ? Math.hypot(step[0], step[1]) : 0
+      if (!staggered && gap > STEP_SLACK) {
+        const speed = Math.min(MOVE_SPEED * 0.75, gap * 6)
+        body.setLinvel({ x: (step[0] / gap) * speed, y: linvel.y, z: (step[1] / gap) * speed }, true)
+      } else if (!staggered) {
+        body.setLinvel({ x: linvel.x * 0.8, y: linvel.y, z: linvel.z * 0.8 }, true)
+      }
+
+      // Training: turn to face the bag. Beside a stage wall: turn to face the
+      // wall. In a ring: turn to face the opponent.
+      if (visualRef.current && !knockedOut() && (game.activeTrainer || game.nearWall || aim.target)) {
         const yaw = game.activeTrainer
           ? game.trainYaw
           : game.nearWall
@@ -212,9 +255,37 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
     motion.grounded = grounded
     motion.maxSpeed = maxSpeed
     motion.phase = s.phase
-    motion.shot = (performance.now() / 1000 - useGame.getState().shotAt) / SHOT_DURATION_S
-    // The way the gun points, for the tracers (see ShotEffects). A pure turn about +Y,
-    // so the yaw falls straight out of the quaternion.
+
+    // Punches: each new one goes to the hand whose turn it is (see punchFor), so a
+    // fast auto clicker alternates rather than restarting one arm.
+    const now = performance.now() / 1000
+    const game = useGame.getState()
+    const pu = punches.current
+    if (game.punchCount !== pu.count) {
+      if (game.punchCount > pu.count) {
+        const { right, both, style } = punchFor(game.punchCount, !grounded)
+        if (right || both) {
+          pu.rAt = game.punchAt
+          pu.styleR = style
+        }
+        if (!right || both) {
+          pu.lAt = game.punchAt
+          pu.styleL = style
+        }
+      }
+      pu.count = game.punchCount
+    }
+    motion.punchR = (now - pu.rAt) / PUNCH_S
+    motion.punchL = (now - pu.lAt) / PUNCH_S
+    motion.styleR = pu.styleR
+    motion.styleL = pu.styleL
+    // Gloves up whenever there is something to hit, or something was just hit.
+    const fighting =
+      now - Math.max(pu.rAt, pu.lAt) < GUARD_HOLD_S || game.activeTrainer || game.nearWall || aim.target
+    motion.guard += ((fighting ? 1 : 0) - motion.guard) * (1 - Math.exp(-delta * 6))
+    applyFx(motion, fightFx, now)
+    // The way the player faces, for the punch effects (see PunchEffects). A pure turn
+    // about +Y, so the yaw falls straight out of the quaternion.
     if (visualRef.current) {
       const q = visualRef.current.quaternion
       aim.yaw = 2 * Math.atan2(q.y, q.w)
@@ -242,6 +313,8 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
   })
 
   return (
+    <>
+    <PlayerFx followRef={followRef} motionRef={motionRef} fistsRef={fistsRef} glove={glove} aura={aura} levelUpRef={levelUpRef} local />
     <RigidBody
       ref={bodyRef}
       position={position}
@@ -256,7 +329,7 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
     >
       <CapsuleCollider args={[CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS]} />
       {/* Empty, and at the body's own origin: the smoothed position to follow. */}
-      <group ref={anchorRef} />
+      <group ref={followRef} />
       {/* Avatar origin is at the feet; the capsule origin is at its centre. */}
       <group ref={visualRef} position={[0, -PLAYER_HEIGHT / 2, 0]}>
         {/* The avatar downloads on its own, so the body (and the camera following
@@ -271,11 +344,13 @@ export function Player({ position = [0, 3, 0], onAvatarReady, bodyRef: externalB
               onReady={onAvatarReady}
               targetHeight={PLAYER_HEIGHT}
               motionRef={motionRef}
+              fistsRef={fistsRef}
             />
           </Suspense>
         </AvatarBoundary>
       </group>
     </RigidBody>
+    </>
   )
 }
 

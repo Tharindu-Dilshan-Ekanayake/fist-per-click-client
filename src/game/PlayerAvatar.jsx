@@ -15,7 +15,6 @@ import { loadOBJ, loadPartGLB, loadTexture } from '../bloxity/avatarLoader'
 import { useBloxity } from '../bloxity/BloxityContext'
 import { DEFAULT_PROPORTIONS } from '../bloxity/store'
 import {
-  AIM_ANGLE,
   animateRig,
   applyPart,
   applyProportions,
@@ -26,23 +25,22 @@ import {
   placeHandHolder,
 } from './avatarRig'
 import { useGame } from './gameStore'
-import GunModel from './GunModel'
-import { getGun } from './guns'
+import { getGlove } from './gloves'
+import GloveModel from './GloveModel'
 
 /**
- * Held gun size relative to its shop model.
+ * Worn glove size relative to the shop model.
  *
- * Later guns carry their own `size` on top of this, so keep the held scale moderate
- * to make the gun read clearly without letting the largest models clip the avatar.
+ * Big on purpose - the reference game's gloves are about the size of the head - and
+ * later pairs carry their own `size` on top of this.
  */
-const HELD_SCALE = 1.08
-/**
- * Cancels the arm's raise, so that with the arm held out on aim the barrel points
- * straight ahead instead of at the sky. The recoil then tips it up, as it should.
- */
-const HELD_ROTATION = [-AIM_ANGLE, 0, 0]
-/** The held gun's trim always glows a little, even a plain one with no glow of its own. */
+const HELD_SCALE = 1.3
+/** The worn gloves' trim always glows a little, even a plain pair with no glow of its own. */
 const HELD_MIN_GLOW = 0.28
+/** The middle of a glove's fist, in its own frame (see GloveModel's FIST). */
+const FIST_Y = -0.23
+/** Gloves sit a touch down the hand from the palm, so the cuff covers the wrist. */
+const HELD_OFFSET = [0, -0.03, 0]
 
 /**
  * Keeps the avatar breathing when it is rendered outside the game (a menu preview,
@@ -68,12 +66,12 @@ function fallbackMotion(delta) {
  * changing cosmetics in the Bloxity portal updates the character live.
  *
  * @param {{ onReady?: () => void, targetHeight?: number, remote?: boolean,
- *           equipped?: object, proportions?: object, gunId?: string }} props
+ *           equipped?: object, proportions?: object, gloveId?: string }} props
  *   `targetHeight` is the world-space height to fit the avatar into, in the game's
  *   own units. Bloxity authors the rig ~6.4 units tall with the feet at y=0, which is
  *   far bigger than a metric-scale physics capsule, so the model is measured and
  *   rescaled rather than trusted at native size.
- *   `remote` renders another player: their `equipped` / `proportions` / `gunId`
+ *   `remote` renders another player: their `equipped` / `proportions` / `gloveId`
  *   come from the lobby server instead of our own Bloxity session and game state.
  */
 export const PlayerAvatar = forwardRef(function PlayerAvatar(
@@ -84,7 +82,8 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
     remote = false,
     equipped: remoteEquipped = null,
     proportions: remoteProportions,
-    gunId,
+    gloveId,
+    fistsRef,
     ...props
   },
   ref,
@@ -120,12 +119,13 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
     return collected
   }, [character])
 
-  // Empty object on the forearm bone; the equipped gun is portalled into it.
-  const hand = useMemo(() => attachHandHolder(rig), [rig])
-  const ownGun = useGame((s) => s.equipped)
-  const gun = getGun(remote ? gunId : ownGun)
-  /** 0-1, brightest on the shot, fading through the recoil; read by GunModel. */
-  const gunFlash = useRef(0)
+  // Empty objects on the forearm bones; the gloves are portalled into them.
+  const hands = useMemo(() => ({ right: attachHandHolder(rig, 'right'), left: attachHandHolder(rig, 'left') }), [rig])
+  const ownGlove = useGame((s) => s.equipped)
+  const glove = getGlove(remote ? gloveId : ownGlove)
+  /** 0-1 per hand, brightest as the punch lands, then fading; read by GloveModel. */
+  const flashR = useRef(0)
+  const flashL = useRef(0)
 
   // Measured once, from the bind pose, before proportions touch the root scale.
   const fit = useMemo(() => {
@@ -214,8 +214,8 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
           }
         }
 
-        // The arm part may have just changed shape, so re-find the palm.
-        if (hand) placeHandHolder(rig, hand)
+        // The arm parts may have just changed shape, so re-find the palms.
+        for (const holder of [hands.right, hands.left]) if (holder) placeHandHolder(rig, holder)
 
         setAssembled(true)
       })
@@ -231,7 +231,7 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
         object.traverse((child) => child.geometry?.dispose())
       }
     }
-  }, [rig, hand, equipped, game, remote])
+  }, [rig, hands, equipped, game, remote])
 
   // --- Proportions -------------------------------------------------------------
   // Applied per frame rather than in an effect: every bone is reset to its rest pose
@@ -247,10 +247,11 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
       applyProportions(rig, proportionsRef.current)
       const motion = motionRef?.current ?? fallbackMotion(delta)
       animateRig(rig, motion)
-      // `shot` counts up from 0 (the instant it fires) to 1 (the recoil's end);
-      // ease the flash out over that same window so it lands exactly on the shot.
-      const shot = motion.shot
-      gunFlash.current = shot !== undefined && shot >= 0 && shot < 1 ? (1 - shot) ** 1.5 : 0
+      // Each hand's punch counts up from 0 (thrown) to 1 (back on guard); the trim
+      // flares as the punch reaches full stretch and fades on the way back.
+      const flare = (p) => (p >= 0.15 && p < 1 ? (1 - (p - 0.15) / 0.85) ** 1.5 : 0)
+      flashR.current = flare(motion.punchR)
+      flashL.current = flare(motion.punchL)
     } catch {
       // A malformed payload must not kill the render loop.
     }
@@ -268,14 +269,34 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
       <group scale={fit.scale} position={[0, fit.footOffset, 0]}>
         <primitive object={character} />
       </group>
-      {/* The holder lives in the rig's native units; undo the fit scale so the gun
-          is authored in world units like everything else. */}
-      {hand &&
+      {/* The holders live in the rig's native units; undo the fit scale so the
+          gloves are authored in world units like everything else. The model is the
+          left glove; the right is its mirror image (side -1). */}
+      {hands.right &&
         createPortal(
-          <group scale={HELD_SCALE / fit.scale} rotation={HELD_ROTATION}>
-            <GunModel gun={gun} minGlow={HELD_MIN_GLOW} flashRef={gunFlash} local={!remote} />
+          <group scale={HELD_SCALE / fit.scale} position={HELD_OFFSET}>
+            <GloveModel glove={glove} side={-1} minGlow={HELD_MIN_GLOW} flashRef={flashR} sparkles={!remote} />
+            <object3D
+              position={[0, FIST_Y * glove.size, 0]}
+              ref={(el) => {
+                if (fistsRef) fistsRef.current = { ...fistsRef.current, right: el }
+              }}
+            />
           </group>,
-          hand,
+          hands.right,
+        )}
+      {hands.left &&
+        createPortal(
+          <group scale={HELD_SCALE / fit.scale} position={HELD_OFFSET}>
+            <GloveModel glove={glove} side={1} minGlow={HELD_MIN_GLOW} flashRef={flashL} sparkles={!remote} />
+            <object3D
+              position={[0, FIST_Y * glove.size, 0]}
+              ref={(el) => {
+                if (fistsRef) fistsRef.current = { ...fistsRef.current, left: el }
+              }}
+            />
+          </group>,
+          hands.left,
         )}
     </group>
   )
