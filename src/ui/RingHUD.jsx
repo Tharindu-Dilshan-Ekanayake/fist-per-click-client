@@ -23,8 +23,8 @@ function useTicker(on) {
 }
 
 /** One fighter's health bar, in their corner's colour. */
-function HealthBar({ name, hp, slot, me, touch, align }) {
-  const fraction = Math.max(0, Math.min(1, hp / RING_MAX_HP))
+function HealthBar({ name, hp, max = RING_MAX_HP, slot, me, touch, align }) {
+  const fraction = Math.max(0, Math.min(1, hp / max))
   const fill =
     fraction > 0.5
       ? 'linear-gradient(to bottom, #b4ff6e, #22b81a)'
@@ -47,7 +47,7 @@ function HealthBar({ name, hp, slot, me, touch, align }) {
           style={{ width: `${fraction * 100}%`, background: fill }}
         />
         <span className={`absolute inset-0 flex items-center justify-center text-white ${touch ? 'text-[10px]' : 'text-sm'}`} style={OUTLINE}>
-          {Math.ceil(hp)} / {RING_MAX_HP}
+          {Math.ceil(hp)} / {Math.round(max)}
         </span>
       </div>
     </div>
@@ -81,7 +81,7 @@ export function RingHUD() {
       >
         🥊 {RINGS[pad.index].name} · {CORNER_NAMES[pad.slot]}
         <div className={touch ? 'text-[10px] text-sky-200' : 'text-base text-sky-200'}>
-          {busy ? 'You are next - wait for this fight to finish' : 'Ready! Waiting for someone on the other pad...'}
+          {busy ? 'You are next - wait for this fight to finish' : 'Ready! Waiting for someone on the other pad...'} (E to leave)
         </div>
       </div>
     )
@@ -126,11 +126,11 @@ export function RingHUD() {
             🥊 {RINGS[mine.index].name}
           </div>
           <div className="flex items-center gap-3">
-            <HealthBar name={a ? nameOf(a) : '- empty -'} hp={a ? ring.hp[0] : 0} slot={0} me={a === selfId} touch={touch} />
+            <HealthBar name={a ? nameOf(a) : '- empty -'} hp={a ? ring.hp[0] : 0} max={ring.mh[0]} slot={0} me={a === selfId} touch={touch} />
             <span className={`shrink-0 text-yellow-300 ${touch ? 'text-sm' : 'text-3xl'}`} style={OUTLINE}>
               VS
             </span>
-            <HealthBar name={b ? nameOf(b) : '- empty -'} hp={b ? ring.hp[1] : 0} slot={1} me={b === selfId} touch={touch} align="right" />
+            <HealthBar name={b ? nameOf(b) : '- empty -'} hp={b ? ring.hp[1] : 0} max={ring.mh[1]} slot={1} me={b === selfId} touch={touch} align="right" />
           </div>
         </div>
         {hint && (

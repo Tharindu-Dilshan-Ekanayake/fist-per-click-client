@@ -17,11 +17,12 @@ import {
   PAD_RADIUS,
   RING_FLOOR,
   RING_HALF,
-  RING_MAX_HP,
   RING_PLATFORM_HALF,
   RING_POST_H,
 } from '../rings'
+import { useGame } from '../gameStore'
 import { Label } from './Effects'
+import InteractPrompt from './InteractPrompt'
 import { geometry, merge } from './geometry'
 import PadGlow from './PadGlow'
 import { labelTexture, radialGlowTexture, shade } from './textures'
@@ -176,7 +177,7 @@ function drawBoard(ctx, w, h, ring, state, names) {
     ctx.font = font(26)
     const name = id ? fit(ctx, names(id), bw - 26) : '- empty -'
     outlined(ctx, name, x0 + 22, y, 26, id ? '#ffffff' : '#8a8fb0', 'left')
-    const hp = open ? (id ? 1 : 0) : Math.max(0, state.hp[slot]) / RING_MAX_HP
+    const hp = open ? (id ? 1 : 0) : Math.max(0, state.hp[slot]) / state.mh[slot]
     const by = y + 34
     ctx.fillStyle = INK
     ctx.beginPath()
@@ -221,8 +222,9 @@ function createBoard(ring) {
  * over it saying whose it is, and a sensor that tells RingDirector when you step on
  * or off.
  */
-function RingPad({ ring, slot, occupant, fightOn }) {
+function RingPad({ ring, slot, occupant, mine, fightOn }) {
   const color = CORNER_COLORS[slot]
+  const offered = useGame((s) => s.interact?.kind === 'ringPad' && s.interact.id === `${ring.id}:${slot}`)
   const [px, pz] = padOf(ring, slot)
   const disc = useRef(null)
   useFrame(({ clock }) => {
@@ -236,7 +238,7 @@ function RingPad({ ring, slot, occupant, fightOn }) {
   }
   const status = occupant
     ? { text: `${occupant} is ready!`, scale: 0.6, fill: '#b4ff8a' }
-    : { text: fightOn ? 'Wait here for the next fight' : 'Stand here to fight!', scale: 0.6, fill: '#ffe9a8' }
+    : { text: fightOn ? 'Press E here for the next fight' : 'Press E here to fight!', scale: 0.6, fill: '#ffe9a8' }
   return (
     <group position={[px - ring.x, 0, pz - ring.z]}>
       <mesh position={[0, 0.1, 0]} receiveShadow>
@@ -256,6 +258,15 @@ function RingPad({ ring, slot, occupant, fightOn }) {
           style={{ width: 512 }}
         />
       </Billboard>
+      {offered && (
+        <InteractPrompt
+          position={[0, 1.9, 0]}
+          action={mine ? 'Leave' : 'Join fight'}
+          title={`${ring.name} · ${CORNER_NAMES[slot]}`}
+          detail={mine ? 'Waiting for an opponent...' : occupant ? `${occupant} is waiting for you!` : 'Join, and fight whoever joins the other pad'}
+          tone={mine ? 'done' : 'normal'}
+        />
+      )}
       <RigidBody type="fixed" colliders={false}>
         <CuboidCollider sensor args={[PAD_RADIUS - 0.1, 1, PAD_RADIUS - 0.1]} position={[0, 1, 0]} onIntersectionEnter={onEnter} onIntersectionExit={onExit} />
       </RigidBody>
@@ -453,6 +464,7 @@ export function BoxingRing({ ring }) {
             ring={ring}
             slot={slot}
             occupant={id ? names(id) : null}
+            mine={Boolean(id) && id === selfId}
             fightOn={state.s !== 'open'}
           />
         )

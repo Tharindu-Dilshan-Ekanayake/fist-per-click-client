@@ -126,7 +126,7 @@ function attach(joined) {
   joined.onMessage('ringStart', (message) => {
     // The fighters are in from this moment, before the next snapshot says so: the
     // teleport into the ring must not meet a ring that still thinks they are outside.
-    markRingStart(message.r, message.f)
+    markRingStart(message.r, message.f, message.mh)
     ringEvents.start(message)
   })
   joined.onMessage('ringCancel', (message) => ringEvents.cancel(message))

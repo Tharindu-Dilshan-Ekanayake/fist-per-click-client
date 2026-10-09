@@ -7,13 +7,13 @@ import { RING_MAX_HP, RINGS } from './rings'
  * net/lobbyClient.js and the server's rings.js).
  *
  * `rings[i]` is `{ f: [id | null, id | null], p: [id | null, id | null], hp: [a, b], s: state,
- * t: ms left, at, since }`: the two fighters (red corner, blue corner), who is waiting
- * on its two pads, the fighters' health, the ring's state -
+ * t: ms left, at, since, mh }`: the two fighters (red corner, blue corner), who is waiting
+ * on its two pads, the fighters' health and their full health (it grows with level), the ring's state -
  * 'open' | 'countdown' | 'fight' | 'ko' - how long its clock had left at `at`
  * (`performance.now()` when the snapshot arrived), and since when it has been in
  * that state, as far as this client has seen.
  */
-const empty = () => RINGS.map(() => ({ f: [null, null], p: [null, null], hp: [RING_MAX_HP, RING_MAX_HP], s: 'open', t: 0, at: 0, since: 0 }))
+const empty = () => RINGS.map(() => ({ f: [null, null], p: [null, null], hp: [RING_MAX_HP, RING_MAX_HP], mh: [RING_MAX_HP, RING_MAX_HP], s: 'open', t: 0, at: 0, since: 0 }))
 
 export const useRings = create(() => ({ rings: empty() }))
 
@@ -26,7 +26,7 @@ export function setRings(snapshot) {
     rings: RINGS.map((_, i) => {
       const r = snapshot[i] ?? empty()[i]
       const since = before[i]?.s === r.s ? before[i].since : at
-      return { f: r.f, p: r.p ?? [null, null], hp: r.hp, s: r.s, t: r.t, at, since }
+      return { f: r.f, p: r.p ?? [null, null], hp: r.hp, mh: r.mh ?? [RING_MAX_HP, RING_MAX_HP], s: r.s, t: r.t, at, since }
     }),
   })
 }
@@ -41,12 +41,12 @@ export function setRingHp(index, hp) {
 }
 
 /** A fight is starting: these two are in the ring, off the pads, counting down. */
-export function markRingStart(index, fighters) {
+export function markRingStart(index, fighters, mh) {
   const { rings } = useRings.getState()
   if (!rings[index] || !Array.isArray(fighters)) return
   const next = [...rings]
   const at = performance.now()
-  next[index] = { ...next[index], f: fighters, p: [null, null], hp: [RING_MAX_HP, RING_MAX_HP], s: 'countdown', t: 3000, at, since: at }
+  next[index] = { ...next[index], f: fighters, p: [null, null], hp: [...(mh ?? [RING_MAX_HP, RING_MAX_HP])], mh: mh ?? [RING_MAX_HP, RING_MAX_HP], s: 'countdown', t: 3000, at, since: at }
   useRings.setState({ rings: next })
 }
 

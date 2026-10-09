@@ -11,7 +11,7 @@ const STEPS = [
   ['02', 'Follow the blue arrows to the Stage 1 gate and smash the walls - break 10 to clear a stage.'],
   ['03', 'Hold E on a Win pad to cash in your Wins. Spend them on bigger gloves, pets and punching bags.'],
   ['04', 'Step onto a punching bag\u2019s pad to train on it: it multiplies your Strength.'],
-  ['05', 'Fight other players in the boxing rings behind the training zone. The stronger fist wins!'],
+  ['05', 'Fight other players in the boxing rings: stand on a pad in front of a ring and press E. The stronger fist wins!'],
   ['06', 'Reach the level cap and Rebirth for permanent Power. Rebirth 3 opens Space World.'],
 ]
 
@@ -80,7 +80,7 @@ export function HowToPlay() {
           <div className="mb-1 text-center text-xs font-black uppercase tracking-[0.2em] text-sky-700" style={CHIP}>
             Welcome to +1 Fist
           </div>
-          <h1 id="how-to-play-title" className="text-center text-3xl text-[#211b36] sm:text-4xl" style={OUTLINE}>
+          <h1 id="how-to-play-title" className="text-center text-3xl text-[#ffffff] sm:text-4xl" style={OUTLINE}>
             Guide
           </h1>
           <p className="mt-1 text-center text-sm font-semibold text-slate-600 sm:text-base">

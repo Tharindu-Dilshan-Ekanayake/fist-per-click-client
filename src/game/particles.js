@@ -51,7 +51,7 @@ function material() {
   sharedMaterial ??= new ShaderMaterial({
     vertexShader: VERTEX,
     fragmentShader: FRAGMENT,
-    uniforms: { uScale: { value: 520 } },
+    uniforms: { uScale: { value: 400 } },
     transparent: true,
     depthWrite: false,
     blending: AdditiveBlending,

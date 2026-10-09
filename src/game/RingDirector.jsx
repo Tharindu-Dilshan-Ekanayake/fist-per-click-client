@@ -11,7 +11,7 @@ import { formatNumber } from './format'
 import { useGame } from './gameStore'
 import { ringLocal as local } from './ringLocal'
 import { ringEvents, ringOfPlayer, useRings } from './ringState'
-import { CORNER_COLORS, exitSpot, fightSpot, RING_FLOOR, RING_HALF, RING_MAX_HP, ringExit, RINGS } from './rings'
+import { CORNER_COLORS, exitSpot, fightSpot, RING_FLOOR, RING_HALF, ringExit, RINGS } from './rings'
 import { playSound } from './sound'
 import { SPAWN } from './world/themes'
 import { createDynamicLabel, impactRingTexture, impactStarTexture } from './world/textures'
@@ -34,7 +34,7 @@ const BAR_H = 0.42
 const _from = new Vector3()
 
 /** Draws a fighter's name and health bar onto `ctx` (256 x 56). */
-function drawBar(ctx, name, hp, slot) {
+function drawBar(ctx, name, hp, max, slot) {
   const w = 256
   const h = 56
   ctx.clearRect(0, 0, w, h)
@@ -47,7 +47,7 @@ function drawBar(ctx, name, hp, slot) {
   ctx.strokeText(name, w / 2, 12)
   ctx.fillStyle = '#ffffff'
   ctx.fillText(name, w / 2, 12)
-  const f = Math.max(0, Math.min(1, hp / RING_MAX_HP))
+  const f = Math.max(0, Math.min(1, hp / max))
   ctx.fillStyle = '#12131f'
   ctx.beginPath()
   ctx.roundRect(6, 26, w - 12, 26, 13)
@@ -347,7 +347,7 @@ export function RingDirector({ bodyRef }) {
         if (s.shown[i] !== key && barLabels.current) {
           s.shown[i] = key
           const { ctx, texture } = barLabels.current[i]
-          drawBar(ctx, nameOf(id), st.hp[slot], slot)
+          drawBar(ctx, nameOf(id), st.hp[slot], st.mh[slot], slot)
           texture.needsUpdate = true
           if (bar.material.map !== texture) {
             bar.material.map = texture

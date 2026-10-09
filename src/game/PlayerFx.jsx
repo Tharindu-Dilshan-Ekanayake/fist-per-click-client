@@ -6,15 +6,16 @@ import { gloveTier } from './gloves'
 import { createParticles } from './particles'
 import { qualityOf, useSettings } from './settings'
 import { playSound } from './sound'
-import { beamTexture, labelTexture, neonOutlineTexture, radialGlowTexture } from './world/textures'
+import { beamTexture, labelTexture } from './world/textures'
 
 /**
  * Everything that glows round one player, for the player themselves and for everyone
  * else in the lobby alike - all of it driven by what is already sent over the
  * network (their position, their punch count, their gloves, aura and level):
  *
- *   - their aura, if they wear one: a ring of light at their feet, a glow round the
- *     body, and particles that move the way the aura's style says (see auras.js)
+ *   - their aura, if they wear one: a light glow streaming gently outwards off the
+ *     body in the aura's colours - and nothing that covers the player (a ring or a
+ *     column of light over them hid them from everyone else)
  *   - their gloves' own effect: a trail off each fist in the gloves' colours and in
  *     the manner of their design (fire, sparks, stars, frost...) - faint for the
  *     first pairs, rich for the best - streaming as they walk and bursting on every
@@ -35,13 +36,10 @@ import { beamTexture, labelTexture, neonOutlineTexture, radialGlowTexture } from
  */
 export function PlayerFx({ followRef, motionRef, fistsRef, glove, aura, levelUpRef, local = false }) {
   const rich = useSettings((s) => qualityOf(s.quality).sparkles)
-  const pool = useMemo(() => createParticles(rich ? 600 : 300), [rich])
+  const pool = useMemo(() => createParticles(rich ? 400 : 220), [rich])
   useEffect(() => () => pool.dispose(), [pool])
 
-  const groundRing = useRef(null)
-  const bodyGlow = useRef(null)
   const halo = useRef(null)
-  const column = useRef(null)
   const lvlRing = useRef(null)
   const lvlBeam = useRef(null)
   const lvlText = useRef(null)
@@ -53,7 +51,6 @@ export function PlayerFx({ followRef, motionRef, fistsRef, glove, aura, levelUpR
     last: [new Vector3(), new Vector3()],
     hasLast: [false, false],
     flared: [false, false],
-    boltAt: 0,
     seenLevel: -Infinity,
     airPunch: false,
     waveAt: -Infinity,
@@ -61,7 +58,6 @@ export function PlayerFx({ followRef, motionRef, fistsRef, glove, aura, levelUpR
   })
 
   const tier = gloveTier(glove)
-  const auraColors = useMemo(() => (aura ? aura.colors.map((c) => new Color(c)) : null), [aura])
 
   useFrame(({ camera, clock }, delta) => {
     const follow = followRef.current
@@ -78,32 +74,12 @@ export function PlayerFx({ followRef, motionRef, fistsRef, glove, aura, levelUpR
 
     // --- Aura -------------------------------------------------------------------
     if (aura) {
-      s.acc += dt * rate * auraRate(aura) * (1 + moving * 0.6)
+      // A little more on every punch, and while moving.
+      const p = Math.max(punchKick(m.punchR), punchKick(m.punchL))
+      s.acc += dt * rate * (aura.big ? 20 : 14) * (1 + moving * 0.4 + p * 1.5)
       while (s.acc >= 1) {
         s.acc -= 1
         emitAura(pool, aura, _c, feet, t)
-      }
-      // A beat of extra light on every punch.
-      const p = Math.max(punchKick(m.punchR), punchKick(m.punchL))
-      if (groundRing.current) {
-        groundRing.current.visible = true
-        groundRing.current.position.set(_c.x, feet + 0.06, _c.z)
-        groundRing.current.rotation.z = t * 1.2
-        const k = 1 + 0.08 * Math.sin(t * 3) + p * 0.35
-        groundRing.current.scale.setScalar((aura.big ? 3.2 : 2.6) * k)
-        groundRing.current.material.opacity = 0.9 + p * 0.1
-      }
-      if (bodyGlow.current) {
-        bodyGlow.current.visible = true
-        bodyGlow.current.position.set(_c.x, _c.y + 0.1, _c.z)
-        bodyGlow.current.scale.setScalar((aura.big ? 3.8 : 3.1) * (1 + 0.06 * Math.sin(t * 2.4) + p * 0.3))
-        bodyGlow.current.material.opacity = 0.65 + p * 0.3
-      }
-      if (column.current) {
-        column.current.visible = true
-        column.current.position.set(_c.x, feet + 1.25, _c.z)
-        column.current.rotation.y = t * 0.6
-        column.current.material.opacity = 0.5 + 0.12 * Math.sin(t * 3) + p * 0.3
       }
       if (halo.current) {
         halo.current.visible = aura.style === 'crown'
@@ -112,15 +88,8 @@ export function PlayerFx({ followRef, motionRef, fistsRef, glove, aura, levelUpR
           halo.current.rotation.z = t * 0.8
         }
       }
-      if (aura.style === 'lightning' && now - s.boltAt > 0.35 + Math.random() * 0.5) {
-        s.boltAt = now
-        emitBolt(pool, _c, feet, aura)
-      }
-    } else {
-      if (groundRing.current) groundRing.current.visible = false
-      if (bodyGlow.current) bodyGlow.current.visible = false
-      if (column.current) column.current.visible = false
-      if (halo.current) halo.current.visible = false
+    } else if (halo.current) {
+      halo.current.visible = false
     }
 
     // --- The gloves' trails and punch bursts -----------------------------------
@@ -139,7 +108,7 @@ export function PlayerFx({ followRef, motionRef, fistsRef, glove, aura, levelUpR
       const travelled = _f.distanceTo(s.last[i])
       // Trails follow the fist's own movement: walking, and above all punching.
       if (travelled < 3) {
-        s.fistAcc[i] += travelled * look.density * (0.5 + tier / 16) * rate
+        s.fistAcc[i] += travelled * look.density * (0.3 + tier / 26) * rate
         while (s.fistAcc[i] >= 1) {
           s.fistAcc[i] -= 1
           _v.lerpVectors(s.last[i], _f, Math.random())
@@ -253,23 +222,10 @@ export function PlayerFx({ followRef, motionRef, fistsRef, glove, aura, levelUpR
     pool.update(delta)
   })
 
-  const ringMap = neonOutlineTexture(aura?.colors[1] ?? '#ffffff', 'circle')
   const glow = { transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false }
   return (
     <>
       <primitive object={pool.points} />
-      <mesh ref={groundRing} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={2}>
-        <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial map={ringMap} color={auraColors?.[0] ?? '#ffffff'} {...glow} />
-      </mesh>
-      <sprite ref={bodyGlow} visible={false} renderOrder={2}>
-        <spriteMaterial map={radialGlowTexture()} color={auraColors?.[1] ?? '#ffffff'} {...glow} />
-      </sprite>
-      {/* A soft column of the aura's light, fading upwards. */}
-      <mesh ref={column} visible={false} renderOrder={2}>
-        <cylinderGeometry args={[0.62, 0.78, 2.5, 24, 1, true]} />
-        <meshBasicMaterial map={beamTexture()} color={auraColors?.[1] ?? '#ffffff'} side={DoubleSide} {...glow} />
-      </mesh>
       <mesh ref={halo} rotation={[Math.PI / 2, 0, 0]} visible={false}>
         <torusGeometry args={[0.32, 0.04, 8, 32]} />
         <meshBasicMaterial color={aura?.colors[0] ?? '#ffffff'} toneMapped={false} />
@@ -305,114 +261,40 @@ const levelUpLabel = () => labelTexture({ lines: [{ text: 'LEVEL UP!', fill: ['#
 /** 0..1 for the moment a punch lands, else 0. */
 const punchKick = (p) => (p >= 0.25 && p < 0.6 ? 1 - Math.abs(p - 0.35) / 0.25 : 0)
 
-/** Particles a second for each aura style. */
-const auraRate = (aura) =>
-  ({ spark: 28, flame: 70, swirl: 46, bubbles: 16, lightning: 34, galaxy: 40, rainbow: 54, crown: 26 })[aura.style] *
-  (aura.big ? 1.5 : 1)
-
 const rand = (a, b) => a + Math.random() * (b - a)
-const pickColor = (colors) => colors[Math.random() < 0.5 ? 0 : 1]
 
-/** One aura particle, round the player at centre `c`. */
+/**
+ * One aura particle: from a point on the body, drifting gently outwards and a little
+ * up, fading from the aura's first colour to its second. Small and soft on purpose:
+ * the player has to stay visible inside it.
+ */
 function emitAura(pool, aura, c, feet, t) {
-  const [c0, c1] = aura.colors
-  const big = (aura.big ? 1.4 : 1) * 1.45
   const a = Math.random() * Math.PI * 2
-  switch (aura.style) {
-    case 'flame': {
-      const r = rand(0.3, 0.6) * big
-      pool.emit({
-        x: c.x + Math.cos(a) * r, y: feet + rand(0, 0.3), z: c.z + Math.sin(a) * r,
-        vx: -Math.cos(a) * 0.3, vy: rand(1.4, 2.6) * big, vz: -Math.sin(a) * 0.3,
-        life: rand(0.5, 0.85), size: rand(0.35, 0.55) * big, endSize: 0.04, color: c0, endColor: c1, drag: 0.8, gravity: -1.2, alpha: 0.85,
-      })
-      break
-    }
-    case 'swirl': {
-      const arm = Math.random() < 0.5 ? 0 : Math.PI
-      const ang = t * 3 + arm
-      pool.emit({
-        x: c.x + Math.cos(ang) * 0.7, y: feet + rand(0, 0.2), z: c.z + Math.sin(ang) * 0.7,
-        vx: -Math.sin(ang) * 2, vy: rand(1, 1.6), vz: Math.cos(ang) * 2,
-        life: 1.2, size: 0.38, endSize: 0.06, color: c0, endColor: c1, drag: 0.3, spin: 4,
-      })
-      break
-    }
-    case 'bubbles': {
-      const r = rand(0.2, 0.8)
-      pool.emit({
-        x: c.x + Math.cos(a) * r, y: feet + rand(0, 0.6), z: c.z + Math.sin(a) * r,
-        vx: rand(-0.2, 0.2), vy: rand(0.6, 1.1), vz: rand(-0.2, 0.2),
-        life: rand(1.3, 1.9), size: rand(0.24, 0.36), endSize: 0.46, color: pickColor(aura.colors), endColor: c1, drag: 0.2, spin: rand(-3, 3), alpha: 0.8,
-      })
-      break
-    }
-    case 'lightning': {
-      const r = rand(0.35, 0.6)
-      pool.emit({
-        x: c.x + Math.cos(a) * r, y: feet + rand(0.1, 1.9), z: c.z + Math.sin(a) * r,
-        vx: rand(-2, 2), vy: rand(-1, 2), vz: rand(-2, 2),
-        life: rand(0.12, 0.25), size: 0.34, endSize: 0.06, color: c0, endColor: c1, drag: 4,
-      })
-      break
-    }
-    case 'galaxy': {
-      const tilt = Math.random() < 0.5 ? 0.35 : -0.35
-      const r = 0.85
-      pool.emit({
-        x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r * tilt, z: c.z + Math.sin(a) * r,
-        vx: -Math.sin(a) * 2.6, vy: Math.cos(a) * tilt * 2.6, vz: Math.cos(a) * 2.6,
-        life: rand(1.1, 1.6), size: rand(0.2, 0.32), endSize: 0.06, color: pickColor(aura.colors), endColor: '#ffffff', drag: 0, spin: 3,
-      })
-      break
-    }
-    case 'rainbow': {
-      const ang = t * 2.6 + Math.random() * 0.5
-      _hue.setHSL((t * 0.35 + Math.random() * 0.15) % 1, 1, 0.6)
-      pool.emit({
-        x: c.x + Math.cos(ang) * 0.75, y: feet + rand(0, 0.2), z: c.z + Math.sin(ang) * 0.75,
-        vx: -Math.sin(ang) * 1.6, vy: rand(1.2, 2), vz: Math.cos(ang) * 1.6,
-        life: 1.2, size: 0.42, endSize: 0.08, color: `#${_hue.getHexString()}`, drag: 0.3, spin: 3.5,
-      })
-      break
-    }
-    case 'crown': {
-      const r = rand(0, 0.32)
-      pool.emit({
-        x: c.x + Math.cos(a) * r, y: c.y + 1.3, z: c.z + Math.sin(a) * r,
-        vx: rand(-0.3, 0.3), vy: rand(-0.4, -0.1), vz: rand(-0.3, 0.3),
-        life: rand(1, 1.4), size: rand(0.14, 0.24) * big, endSize: 0.04, color: c0, endColor: c1, drag: 0.6, gravity: 1.2,
-      })
-      if (Math.random() < 0.5) {
-        pool.emit({
-          x: c.x + Math.cos(a) * 0.6, y: feet + rand(0, 0.2), z: c.z + Math.sin(a) * 0.6,
-          vy: rand(0.8, 1.4), life: 1, size: 0.32, endSize: 0.05, color: c1, drag: 0.4,
-        })
-      }
-      break
-    }
-    default: {
-      // spark
-      const r = rand(0.4, 0.75)
-      pool.emit({
-        x: c.x + Math.cos(a) * r, y: feet + rand(0, 1.8), z: c.z + Math.sin(a) * r,
-        vx: rand(-0.15, 0.15), vy: rand(0.5, 1.1), vz: rand(-0.15, 0.15),
-        life: rand(0.8, 1.3), size: rand(0.22, 0.36), endSize: 0.03, color: c0, endColor: c1, drag: 0.5,
-      })
-    }
+  const ox = Math.cos(a)
+  const oz = Math.sin(a)
+  const out = rand(0.6, 1.1)
+  let color = aura.colors[0]
+  let endColor = aura.colors[1]
+  if (aura.style === 'rainbow') {
+    _hue.setHSL((t * 0.3 + Math.random() * 0.2) % 1, 1, 0.62)
+    color = `#${_hue.getHexString()}`
+    endColor = color
   }
-}
-
-/** A lightning aura's bolt: a jagged line of sparks from head to toe. */
-function emitBolt(pool, c, feet, aura) {
-  const a = Math.random() * Math.PI * 2
-  let x = c.x + Math.cos(a) * 0.55
-  let z = c.z + Math.sin(a) * 0.55
-  for (let y = c.y + 1.2; y > feet; y -= 0.12) {
-    x += rand(-0.08, 0.08)
-    z += rand(-0.08, 0.08)
-    pool.emit({ x, y, z, life: 0.18, size: 0.32, endSize: 0.18, color: aura.colors[0], endColor: aura.colors[1], drag: 0 })
-  }
+  pool.emit({
+    x: c.x + ox * 0.3,
+    y: feet + rand(0.25, 1.75),
+    z: c.z + oz * 0.3,
+    vx: ox * out,
+    vy: rand(0.15, 0.45),
+    vz: oz * out,
+    life: rand(0.6, 0.95),
+    size: rand(0.14, 0.2) * (aura.big ? 1.3 : 1),
+    endSize: 0.03,
+    color,
+    endColor,
+    alpha: 0.8,
+    drag: 1.4,
+  })
 }
 
 /**

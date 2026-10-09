@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 
 import { aurasForLevel, getAura } from './auras'
 import { getEgg } from './eggs'
+import { padHooks } from './padHooks'
 import { formatBonus, formatNumber } from './format'
 import { footprintCost } from './footprintSets'
 import { DEFAULT_GLOVE, getGlove } from './gloves'
@@ -167,7 +168,7 @@ export const useGame = create(
       trainYaw: Math.PI,
       /** `[x, z]` the player steps to while training, in reach of the bag; or null. */
       trainSpot: null,
-      /** What the E key acts on: `{ kind: 'glove' | 'egg' | 'pad' | 'trainer', id }`, or null. */
+      /** What the E key acts on: `{ kind: 'glove' | 'egg' | 'pad' | 'trainer' | 'ringPad', id }`, or null. */
       interact: null,
       /** `performance.now()` seconds when E started being held, or null. */
       holdingSince: null,
@@ -308,6 +309,7 @@ export const useGame = create(
         if (target?.kind === 'glove') get().pickGlove(target.id)
         else if (target?.kind === 'egg') get().hatchEgg(target.id)
         else if (target?.kind === 'trainer') get().unlockTrainer(target.id)
+        else if (target?.kind === 'ringPad') padHooks.toggle?.(target.id)
       },
       /** E went down. Win pads need it held (see WinPad); everything else acts at once. */
       interactStart: () => {

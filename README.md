@@ -8,16 +8,18 @@ multiplier; Rebirth 3 opens **Space World**.
 
 Behind the training zone are four **boxing rings**. Their ropes are solid — nobody
 walks in or falls out. In front of each are two pads, red corner and blue corner:
-when both have someone on them, those two are taken into the ring and fight. The
-stronger fist does more damage; whoever is knocked out (or behind on health when the
-60-second round ends) lands back in the lobby, and the winner steps out with Wins.
+stand on one and press E to join, and when both are joined those two are taken into
+the ring and fight. Health and punch damage grow with level, and the stronger fist
+does more damage; whoever is knocked out (or behind on health when the 45-second
+round ends) lands back in the lobby, and the winner steps out with Wins.
 Everyone can watch through the ropes: each fighter has a health bar over their
 head and each ring a scoreboard.
 
 Punches go jab, cross, hook, uppercut, haymaker (hand by hand), every tenth is a
 two-fisted blast, and a punch in mid-jump is a flying superman punch that lands
 with a shockwave. **Auras** (a glow round the player) come free at levels 3, 6, 10,
-14 and 20 or are bought in the shop, and every pair of gloves has its own trail
+14 and 20 or are bought in the shop - a light glow streaming off the body, kept
+simple so the player inside it stays easy to see, and every pair of gloves has its own trail
 off the fists — fire, frost, sparks, stars... — on walking and on every punch.
 Everyone in the lobby sees everyone else's aura, trails and level-ups.
 
